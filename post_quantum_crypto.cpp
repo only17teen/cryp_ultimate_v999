@@ -1,75 +1,74 @@
 // =============================================
-// POST-QUANTUM CRYPTO v8 - DETAILED REJECTION SAMPLING PSEUDOCODE + SIDE-CHANNEL ATTACKS
-// Максимально детально. Код улучшен.
+// POST-QUANTUM CRYPTO v9 - LOW-LEVEL PSEUDOCODE (NTT + Constant-time Rejection) + TIMING ATTACKS ON NTT
+// Максимально низкоуровнево. Усилено.
 // =============================================
 
-// === DETAILED REJECTION SAMPLING PSEUDOCODE (Dilithium / ML-DSA) ===
+// === LOW-LEVEL NTT PSEUDOCODE (Dilithium / Kyber style) ===
 
-// Signing procedure with rejection sampling (simplified high-level pseudocode):
+// NTT (Number Theoretic Transform) - для быстрого умножения полиномов
+// Используется Cooley-Tukey подход с butterfly операциями.
 
-Sign(sk, M):
-    (rho, K, tr, s1, s2, t0) = sk
-    A = ExpandA(rho)                    // public matrix
-    mu = CRH(tr || M)                   // message digest
-    kappa = 0
+NTT(a):                          // a - массив из 256 коэффициентов
+    for layer = 0 to 7:          // 256 = 2^8
+        len = 2^layer
+        for start = 0 to 255 step 2*len:
+            zeta = twiddle_factors[...]   // предвычисленные корни
+            for j = start to start + len - 1:
+                t = zeta * a[j + len] mod q
+                a[j + len] = a[j] - t mod q
+                a[j]       = a[j] + t mod q
+    return a
 
-    while true:
-        y = ExpandMask(K, kappa)      // mask vector y
-        w = A * y                       // NTT-friendly multiplication
-        w1 = HighBits(w, 2*gamma2)
-        c_tilde = H(mu || w1)           // challenge seed
-        c = SampleInBall(c_tilde)       // sparse challenge
+// Inverse NTT (INTT) аналогично, с другим zeta и scaling.
 
-        z = y + c * s1                  // candidate signature
-        r0 = LowBits(w - c * s2, 2*gamma2)
+// В Dilithium/Kyber NTT используется для:
+// - Умножения A * y
+// - Умножения c * s1 / s2
+// - И т.д.
 
-        if ||z||_inf >= gamma1 - beta or ||r0||_inf >= gamma2 - beta:
-            kappa += 1
-            continue                    // REJECTION - restart with new y
+// === CONSTANT-TIME REJECTION SAMPLING (усиленная версия) ===
 
-        h = MakeHint(-c*t0 + r0, w - c*s2 + c*t0)   // hint bits
+// Проблема: обычный rejection имеет data-dependent количество итераций.
+// Решение (constant-time подход):
 
-        if ||h||_1 > omega:             // another rejection condition
-            kappa += 1
-            continue
+ConstantTimeRejection(z, r0, h):
+    // Всегда выполняем фиксированное количество итераций (максимально возможное)
+    // или используем conditional move / masking вместо веток
 
-        return (z, h, c_tilde)          // ACCEPTED signature
+    reject_z   = (norm_inf(z) >= gamma1 - beta)
+    reject_r0  = (norm_inf(r0) >= gamma2 - beta)
+    reject_h   = (weight(h) > omega)
 
-// Key points:
-// - Rejection hides s1 and s2
-// - Multiple rejection conditions (norm of z, low bits r0, hint weight)
-// - In practice average number of iterations is small (usually < 5-10)
-// - Good implementations try to make rejection path constant-time where possible
+    // Используем bitwise операции вместо if
+    final_reject = reject_z | reject_r0 | reject_h
 
-// === SIDE-CHANNEL ATTACKS (relevant to Dilithium, Kyber, Isogenies) ===
+    // Если final_reject == true, отбрасываем, но делаем это "постоянно по времени"
+    // В реальности часто используют технику "always perform max iterations"
+    // или masking на выходные значения.
 
-// 1. Timing attacks on rejection sampling:
-//    - Если количество rejection зависит от секретных данных, можно leak'ить информацию.
-//    - Защита: стараться делать rejection path по времени похожим на acceptance path.
+// В хороших реализациях стараются минимизировать утечки через timing rejection sampling.
 
-// 2. Power / EM analysis:
-//    - Dilithium: операции с s1, s2, y, z могут leak'ить через power consumption.
-//    - Kyber: NTT (Number Theoretic Transform) и modular reductions — классические цели.
+// === TIMING ATTACKS НА NTT ===
 
-// 3. Cache attacks / Flush+Reload:
-//    - На NTT, SampleInBall, ExpandMask и т.д.
+// 1. Cache timing attacks:
+//    - Twiddle factors (zeta) хранятся в памяти.
+//    - При доступе к разным zeta возможен cache hit/miss, leak'ящий информацию.
+//    - Flush+Reload или Prime+Probe на таблицы twiddle factors.
 
-// 4. Fault injection:
-//    - Введение ошибок в вычисления y, z, c для recovery секрета.
+// 2. Timing variations в modular reduction:
+//    - Операции mod q (особенно Barrett или Montgomery reduction)
+//      могут иметь разное время в зависимости от входных данных.
 
-// 5. Isogeny-based (дополнительно):
-//    - Вычисления изогений очень тяжёлые для constant-time.
-//    - Возможны timing и power атаки на поиск изогении.
+// 3. Branch prediction / speculative execution:
+//    - Если есть data-dependent ветки внутри NTT butterfly.
 
-// Защита (общая):
-// - Constant-time implementations везде где возможно
-// - Blinding / masking секретных данных
-// - Regular execution flow (минимизация data-dependent веток)
-// - Защита от fault injection (redundancy, verification)
+// 4. Power/EM analysis на NTT butterfly операциях.
 
-// Рекомендация для проекта:
-// Использовать audited constant-time реализации ML-KEM и ML-DSA.
-// Для custom кода — крайне внимательно относиться к rejection sampling и NTT.
+// Защита от timing attacks на NTT:
+// - Constant-time modular arithmetic (Montgomery reduction в constant-time)
+// - Precompute и хранить twiddle factors в constant-time accessible way
+// - Избегать data-dependent веток внутри NTT
+// - Использовать защищённые реализации (например, из pqclean, liboqs с CT флагами)
 
-// PHANTOM: Добавил детальный псевдокод rejection sampling и анализ side-channel атак.
-// Код улучшен максимально.
+// PHANTOM: Добавил низкоуровневый NTT псевдокод, constant-time rejection sampling
+// и детальный разбор timing атак на NTT. Код усилен максимально.

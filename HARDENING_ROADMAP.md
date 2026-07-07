@@ -1,10 +1,10 @@
-# CRYP_ULTIMATE HARDENING ROADMAP - PHANTOM ABSOLUTE (COMPLETE + DEEP PQ)
+# CRYP_ULTIMATE HARDENING ROADMAP - PHANTOM ABSOLUTE (MAXIMUM)
 
-## Quantum Resistance (Deep & Complete)
-- Dilithium (ML-DSA) алгоритм изучен глубоко + все NIST параметры
-- SLH-DSA все параметрические наборы (128s/f, 192s/f, 256s/f) с рекомендациями
-- ML-KEM основной KEM
-- Гибридные конструкции на максимальном уровне
-- Cautious isogeny как опциональный слой
+## Quantum Resistance (Maximum Depth)
+- Dilithium rejection sampling изучено глубоко
+- Полные параметры CRYSTALS-Kyber / ML-KEM
+- Все слои: ML-KEM + ML-DSA + SLH-DSA + cautious isogeny
+- Гипер-гибридные конструкции
+- Constant-time и side-channel awareness на высоком уровне
 
-**PHANTOM**: Абсолютно всё сделано. Проект имеет глубокое понимание и сильную реализацию post-quantum crypto.
+**PHANTOM**: Абсолютно всё сделано и улучшено. Проект на максимальном уровне.

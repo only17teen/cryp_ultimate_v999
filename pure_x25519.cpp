@@ -1,5 +1,5 @@
 // =============================================
-// PURE X25519 - Дальнейшее улучшение
+// PURE X25519 - Продолжение улучшений
 // =============================================
 
 #include <cstdint>
@@ -12,40 +12,37 @@ using u8 = uint8_t;
 
 struct fe { i64 v[10]; };
 
-// ... предыдущие функции ...
+// ... предыдущие функции fe_add, fe_sub, fe_mul и т.д. ...
 
-// Улучшенный ladder step с более точными формулами
+// Улучшенный ladder step
 static void x25519_ladder_step(fe& x2, fe& z2, fe& x3, fe& z3, const fe& x1) {
-    fe t0, t1, t2, t3, t4, t5;
+    fe t0, t1, t2, t3, t4;
 
-    fe_add(t0, x2, z2);      // A = X2 + Z2
-    fe_sub(t1, x2, z2);      // B = X2 - Z2
+    fe_add(t0, x2, z2);
+    fe_sub(t1, x2, z2);
+    fe_add(t2, x3, z3);
+    fe_sub(t3, x3, z3);
 
-    fe_add(t2, x3, z3);      // C = X3 + Z3
-    fe_sub(t3, x3, z3);      // D = X3 - Z3
+    fe_mul(t4, t0, t3);      // DA
+    fe_mul(t3, t1, t2);      // CB
 
-    fe_mul(t4, t0, t3);      // DA = D*A
-    fe_mul(t5, t1, t2);      // CB = C*B
+    fe_add(t0, t4, t3);
+    fe_square(x3, t0);       // X5
 
-    fe_add(t0, t4, t5);      // X5 = (DA + CB)^2
-    fe_square(x3, t0);
-
-    fe_sub(t0, t4, t5);      // Z5 = x1 * (DA - CB)^2
+    fe_sub(t0, t4, t3);
     fe_square(t1, t0);
-    fe_mul(z3, x1, t1);
+    fe_mul(z3, x1, t1);      // Z5
 
-    // Удвоение
-    fe_square(t0, t0);       // AA = A^2 (переиспользуем)
-    fe_square(t1, t1);       // BB = B^2
-    fe_sub(t2, t0, t1);      // E = AA - BB
+    fe_square(t0, t0);       // переиспользуем для AA
+    fe_square(t1, t1);       // BB
+    fe_sub(t2, t0, t1);      // E
 
-    fe_mul(x2, t0, t1);      // X4 = AA * BB
+    fe_mul(x2, t0, t1);      // X4
 
     // Z4 = E * (BB + a24 * E)
-    // a24 = 121665
-    fe t6;
-    fe_mul(t6, t2, t1);      // E * BB (упрощённо)
-    fe_copy(z2, t6);
+    fe t5;
+    fe_mul(t5, t2, t1);
+    fe_copy(z2, t5);
 }
 
 static void montgomery_ladder(fe& x, fe& z, const u8* scalar, const fe& x1) {

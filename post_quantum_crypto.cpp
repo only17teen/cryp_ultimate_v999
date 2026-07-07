@@ -1,74 +1,70 @@
 // =============================================
-// POST-QUANTUM CRYPTO v9 - LOW-LEVEL PSEUDOCODE (NTT + Constant-time Rejection) + TIMING ATTACKS ON NTT
-// Максимально низкоуровнево. Усилено.
+// POST-QUANTUM CRYPTO v999.2 - Улучшенная версия
+// Сделана более компилируемой + добавлена структура под ML-KEM
+// Для cryp_ultimate_v999
 // =============================================
 
-// === LOW-LEVEL NTT PSEUDOCODE (Dilithium / Kyber style) ===
+#include <vector>
+#include <array>
+#include <cstdint>
+#include <cstring>
 
-// NTT (Number Theoretic Transform) - для быстрого умножения полиномов
-// Используется Cooley-Tukey подход с butterfly операциями.
+// ==================== Базовые структуры ====================
 
-NTT(a):                          // a - массив из 256 коэффициентов
-    for layer = 0 to 7:          // 256 = 2^8
-        len = 2^layer
-        for start = 0 to 255 step 2*len:
-            zeta = twiddle_factors[...]   // предвычисленные корни
-            for j = start to start + len - 1:
-                t = zeta * a[j + len] mod q
-                a[j + len] = a[j] - t mod q
-                a[j]       = a[j] + t mod q
-    return a
+struct MLKEM768 {
+    using byte_vec = std::vector<uint8_t>;
 
-// Inverse NTT (INTT) аналогично, с другим zeta и scaling.
+    static void keygen(byte_vec& pk, byte_vec& sk);
+    static void encaps(const byte_vec& pk, byte_vec& ct, byte_vec& shared_secret);
+    static void decaps(const byte_vec& sk, const byte_vec& ct, byte_vec& shared_secret);
+};
 
-// В Dilithium/Kyber NTT используется для:
-// - Умножения A * y
-// - Умножения c * s1 / s2
-// - И т.д.
+struct MLDSA65 {
+    using byte_vec = std::vector<uint8_t>;
 
-// === CONSTANT-TIME REJECTION SAMPLING (усиленная версия) ===
+    static void keygen(byte_vec& pk, byte_vec& sk);
+    static byte_vec sign(const byte_vec& sk, const byte_vec& msg);
+    static bool verify(const byte_vec& pk, const byte_vec& msg, const byte_vec& sig);
+};
 
-// Проблема: обычный rejection имеет data-dependent количество итераций.
-// Решение (constant-time подход):
+// ==================== Гибридный KEM (X25519 + ML-KEM) ====================
 
-ConstantTimeRejection(z, r0, h):
-    // Всегда выполняем фиксированное количество итераций (максимально возможное)
-    // или используем conditional move / masking вместо веток
+std::vector<uint8_t> hybrid_kem_exchange(const std::vector<uint8_t>& x25519_pk,
+                                         const std::vector<uint8_t>& mlkem_pk);
 
-    reject_z   = (norm_inf(z) >= gamma1 - beta)
-    reject_r0  = (norm_inf(r0) >= gamma2 - beta)
-    reject_h   = (weight(h) > omega)
+// ==================== Заглушки реализаций ====================
 
-    // Используем bitwise операции вместо if
-    final_reject = reject_z | reject_r0 | reject_h
+void MLKEM768::keygen(byte_vec& pk, byte_vec& sk) {
+    pk.resize(1184);
+    sk.resize(2400);
+    // TODO: Реальная реализация keygen ML-KEM-768
+}
 
-    // Если final_reject == true, отбрасываем, но делаем это "постоянно по времени"
-    // В реальности часто используют технику "always perform max iterations"
-    // или masking на выходные значения.
+void MLKEM768::encaps(const byte_vec& pk, byte_vec& ct, byte_vec& shared_secret) {
+    ct.resize(1088);
+    shared_secret.resize(32);
+    // TODO: Реальная реализация encaps
+}
 
-// В хороших реализациях стараются минимизировать утечки через timing rejection sampling.
+void MLKEM768::decaps(const byte_vec& sk, const byte_vec& ct, byte_vec& shared_secret) {
+    shared_secret.resize(32);
+    // TODO: Реальная реализация decaps
+}
 
-// === TIMING ATTACKS НА NTT ===
+void MLDSA65::keygen(byte_vec& pk, byte_vec& sk) {
+    // TODO
+}
 
-// 1. Cache timing attacks:
-//    - Twiddle factors (zeta) хранятся в памяти.
-//    - При доступе к разным zeta возможен cache hit/miss, leak'ящий информацию.
-//    - Flush+Reload или Prime+Probe на таблицы twiddle factors.
+byte_vec MLDSA65::sign(const byte_vec& sk, const byte_vec& msg) {
+    return {};
+}
 
-// 2. Timing variations в modular reduction:
-//    - Операции mod q (особенно Barrett или Montgomery reduction)
-//      могут иметь разное время в зависимости от входных данных.
+bool MLDSA65::verify(const byte_vec& pk, const byte_vec& msg, const byte_vec& sig) {
+    return true;
+}
 
-// 3. Branch prediction / speculative execution:
-//    - Если есть data-dependent ветки внутри NTT butterfly.
-
-// 4. Power/EM analysis на NTT butterfly операциях.
-
-// Защита от timing attacks на NTT:
-// - Constant-time modular arithmetic (Montgomery reduction в constant-time)
-// - Precompute и хранить twiddle factors в constant-time accessible way
-// - Избегать data-dependent веток внутри NTT
-// - Использовать защищённые реализации (например, из pqclean, liboqs с CT флагами)
-
-// PHANTOM: Добавил низкоуровневый NTT псевдокод, constant-time rejection sampling
-// и детальный разбор timing атак на NTT. Код усилен максимально.
+std::vector<uint8_t> hybrid_kem_exchange(const std::vector<uint8_t>& x25519_pk,
+                                         const std::vector<uint8_t>& mlkem_pk) {
+    // Здесь можно вызывать X25519 + MLKEM768::encaps
+    return {};
+}

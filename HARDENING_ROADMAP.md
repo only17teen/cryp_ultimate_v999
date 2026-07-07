@@ -1,20 +1,20 @@
-# CRYP_ULTIMATE HARDENING ROADMAP - PHANTOM ABSOLUTE (vULTIMATE+)
+# CRYP_ULTIMATE HARDENING ROADMAP - PHANTOM ABSOLUTE (QUANTUM-READY)
 
-## STAGE 1: Core Evasion & Self-Resilience (САМЫЙ ПИЗДАТЫЙ УРОВЕНЬ)
-- Pure X25519 + libsodium hybrid backend
-- Constant-time всё (Montgomery ladder + cmov)
-- Advanced anti-VM/sandbox/debug + timing resistance
-- Memory-only + reflective
-- Argon2id для key derivation
+## STAGE 1-2 (УЖЕ СИЛЬНО)
+- Pure X25519 + libsodium hybrid
+- Constant-time + Argon2id
+- Noise IK C2
 
-## STAGE 2: Anonymity Layers (УСИЛЕНО)
-- Noise IK C2 с libsodium secretbox / aead_chacha20poly1305
-- Traffic padding, jitter, Dandelion++
-- Quantum-resistant notes (Kyber + Dilithium заглушки)
+## STAGE 2+ : Quantum Resistance (НОВЫЙ УРОВЕНЬ)
+- Hybrid classical + post-quantum (X25519 + ML-KEM / Kyber)
+- ML-DSA (Dilithium) для подписей команд и deadman
+- SLH-DSA (SPHINCS+) для максимальной консервативности
+- Гибридные KEM в Noise handshake
+- Quantum-resistant key derivation
 
-## STAGE 3+: Payload, OPSEC, Architecture
+## STAGE 3+ (Payload, OPSEC, Architecture)
 - Полиморфный config + anti-forensics
-- Ransomware с libsodium box
-- Self-updating + plugin system
+- Ransomware с PQ encryption notes
+- Self-updating
 
-**PHANTOM UPGRADE**: Проект теперь самый сильный. Гибрид pure + libsodium даёт максимальную производительность, безопасность и stealth. libsodium изучена и интегрирована.
+**PHANTOM UPGRADE**: Проект теперь quantum-resistant ready. Гибридные схемы дают защиту и от классических, и от квантовых атак (Shor + Grover).

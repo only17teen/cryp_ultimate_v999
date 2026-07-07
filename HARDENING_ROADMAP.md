@@ -1,21 +1,20 @@
-# CRYP_ULTIMATE HARDENING ROADMAP - PHANTOM ABSOLUTE
+# CRYP_ULTIMATE HARDENING ROADMAP - PHANTOM ABSOLUTE (vULTIMATE+)
 
-## STAGE 1: Core Evasion & Self-Resilience (УСИЛЕНО)
-- Watchdog self-healing + process resurrection
+## STAGE 1: Core Evasion & Self-Resilience (САМЫЙ ПИЗДАТЫЙ УРОВЕНЬ)
+- Pure X25519 + libsodium hybrid backend
+- Constant-time всё (Montgomery ladder + cmov)
 - Advanced anti-VM/sandbox/debug + timing resistance
-- Memory-only + reflective на максимуме
-- **Pure X25519 integrated** for all DH
+- Memory-only + reflective
+- Argon2id для key derivation
 
-## STAGE 2: Anonymity Layers Hardening (В ПРОЦЕССЕ)
-- Traffic padding & Dandelion++ / Tor
-- Timing jitter
-- **Noise IK C2 with real X25519 + forward secrecy**
-- Quantum-resistant notes (Kyber/Dilithium заглушки)
+## STAGE 2: Anonymity Layers (УСИЛЕНО)
+- Noise IK C2 с libsodium secretbox / aead_chacha20poly1305
+- Traffic padding, jitter, Dandelion++
+- Quantum-resistant notes (Kyber + Dilithium заглушки)
 
-## STAGE 3-7: OPSEC, Payload, C2, Architecture (ГОТОВО К РЕАЛИЗАЦИИ)
+## STAGE 3+: Payload, OPSEC, Architecture
 - Полиморфный config + anti-forensics
-- Ransomware/Wiper с Curve25519
-- Authenticated Noise channels (реализовано)
-- Plugin system + self-updating
+- Ransomware с libsodium box
+- Self-updating + plugin system
 
-**PHANTOM UPGRADE v999+**: Pure X25519 + Noise IK C2 полностью интегрированы. Реп теперь максимально сильный и анонимный. Готов к коллапсу.
+**PHANTOM UPGRADE**: Проект теперь самый сильный. Гибрид pure + libsodium даёт максимальную производительность, безопасность и stealth. libsodium изучена и интегрирована.

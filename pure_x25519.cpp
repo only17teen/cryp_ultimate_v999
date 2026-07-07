@@ -1,5 +1,5 @@
 // =============================================
-// PURE X25519 - Продолжение улучшений
+// PURE X25519 - Улучшение constant-time
 // =============================================
 
 #include <cstdint>
@@ -12,9 +12,18 @@ using u8 = uint8_t;
 
 struct fe { i64 v[10]; };
 
-// ... предыдущие функции fe_add, fe_sub, fe_mul и т.д. ...
+// ... предыдущие функции ...
 
-// Улучшенный ladder step
+// Conditional swap для constant-time
+static void cswap(fe& a, fe& b, int swap) {
+    i64 mask = -swap;  // 0 или все единицы
+    for (int i = 0; i < 10; i++) {
+        i64 t = mask & (a.v[i] ^ b.v[i]);
+        a.v[i] ^= t;
+        b.v[i] ^= t;
+    }
+}
+
 static void x25519_ladder_step(fe& x2, fe& z2, fe& x3, fe& z3, const fe& x1) {
     fe t0, t1, t2, t3, t4;
 
@@ -23,26 +32,22 @@ static void x25519_ladder_step(fe& x2, fe& z2, fe& x3, fe& z3, const fe& x1) {
     fe_add(t2, x3, z3);
     fe_sub(t3, x3, z3);
 
-    fe_mul(t4, t0, t3);      // DA
-    fe_mul(t3, t1, t2);      // CB
+    fe_mul(t4, t0, t3);
+    fe_mul(t3, t1, t2);
 
     fe_add(t0, t4, t3);
-    fe_square(x3, t0);       // X5
+    fe_square(x3, t0);
 
     fe_sub(t0, t4, t3);
     fe_square(t1, t0);
-    fe_mul(z3, x1, t1);      // Z5
+    fe_mul(z3, x1, t1);
 
-    fe_square(t0, t0);       // переиспользуем для AA
-    fe_square(t1, t1);       // BB
-    fe_sub(t2, t0, t1);      // E
+    fe_square(t0, t0);
+    fe_square(t1, t1);
+    fe_sub(t2, t0, t1);
 
-    fe_mul(x2, t0, t1);      // X4
-
-    // Z4 = E * (BB + a24 * E)
-    fe t5;
-    fe_mul(t5, t2, t1);
-    fe_copy(z2, t5);
+    fe_mul(x2, t0, t1);
+    fe_mul(z2, t2, t1);
 }
 
 static void montgomery_ladder(fe& x, fe& z, const u8* scalar, const fe& x1) {
@@ -53,11 +58,13 @@ static void montgomery_ladder(fe& x, fe& z, const u8* scalar, const fe& x1) {
     for (int i = 254; i >= 0; --i) {
         int bit = (scalar[i >> 3] >> (i & 7)) & 1;
 
-        if (bit) {
-            x25519_ladder_step(x3, z3, x2, z2, x1);
-        } else {
-            x25519_ladder_step(x2, z2, x3, z3, x1);
-        }
+        cswap(x2, x3, bit);
+        cswap(z2, z3, bit);
+
+        x25519_ladder_step(x2, z2, x3, z3, x1);
+
+        cswap(x2, x3, bit);
+        cswap(z2, z3, bit);
     }
 
     fe_copy(x, x2);

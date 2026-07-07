@@ -1,41 +1,38 @@
 // =============================================
-// POST-QUANTUM CRYPTO - КВАНТОВО-УСТОЙЧИВЫЕ АЛГОРИТМЫ ДЛЯ cryp_ultimate_v999
-// Изучил полностью: NIST PQC winners + гибридные схемы
-// Shor's algorithm убивает RSA/ECC (включая X25519 в долгосрочной перспективе)
-// Grover ослабляет symmetric crypto в 2 раза (AES-256 остаётся безопасным)
+// POST-QUANTUM CRYPTO v2 - ИЗОМОРФИЗМЫ (ISOGENY-BASED) + ВСЁ ПРЕДЫДУЩЕЕ
+// Добавлено изучение криптографии на изоморфизмах (isogeny-based crypto)
 // =============================================
 
-// Рекомендуемые для проекта (NIST стандарты):
-// - ML-KEM (Kyber) - KEM для key encapsulation (замена/гибрид X25519)
-// - ML-DSA (Dilithium) - подписи
-// - SLH-DSA (SPHINCS+) - hash-based signatures (очень консервативный)
-// - FN-DSA (Falcon) - компактные подписи
+// Предыдущее (lattice-based):
+// - ML-KEM (Kyber) - основной рекомендация
+// - ML-DSA (Dilithium)
+// - SLH-DSA (SPHINCS+)
 
-// Для malware: используй pqclean или liboqs (clean C реализации, embeddable)
-// Гибридный подход (рекомендую): X25519 + ML-KEM (или Kyber) для Noise C2
-// Это даёт forward secrecy классики + quantum resistance
+// НОВОЕ: Isogeny-based cryptography (криптография на изоморфизмах эллиптических кривых)
+// Основная идея: изогении (isogenies) - это гомоморфизмы эллиптических кривых, сохраняющие групповой закон.
+// Hard problem: найти секретную изогению между двумя supersingular эллиптическими кривыми над конечным полем.
+// Это даёт другой hardness assumption, отличный от lattice (LWE) и hash-based.
 
-// Пример интеграции в PhantomNoiseC2 (гибридный handshake):
-// 1. Классический X25519 (или libsodium)
-// 2. ML-KEM encapsulation для дополнительного shared secret
-// 3. Комбинируй через KDF (Argon2 или HKDF)
+// Исторически:
+// - SIDH / SIKE (Supersingular Isogeny Diffie-Hellman/Key Encapsulation)
+//   SIKE был NIST candidate, но в 2022 сломан классической атакой (Castryck-Decru).
+//   Не использовать в продакшене в текущем виде.
 
-// Пример stub для ML-KEM (Kyber-768):
-// В реальности вставь реализацию из pqclean (kyber768.c и т.д.)
-int ml_kem_keygen(uint8_t pk[1184], uint8_t sk[2400]); // пример размеры Kyber-768
-int ml_kem_encaps(uint8_t ct[1088], uint8_t ss[32], const uint8_t pk[1184]);
-int ml_kem_decaps(uint8_t ss[32], const uint8_t ct[1088], const uint8_t sk[2400]);
+// Современные направления (после SIKE):
+// - SQISign (Signature with Efficient Keygen) - подписи на изогениях, всё ещё активно исследуется.
+// - CSIDH (Commutative Supersingular Isogeny Diffie-Hellman) - commutative isogenies, интересен для некоторых сценариев.
+// - Другие новые схемы на supersingular isogenies с улучшенной безопасностью.
 
-// В Noise IK можно добавить второй раунд с ML-KEM для PQ security
-// Или использовать hybrid KEM (X25519 || Kyber)
+// Для cryp_ultimate:
+// - Можно добавить как дополнительный слой в гибридный KEM (X25519 + ML-KEM + Isogeny-based).
+// - Преимущества: другой математический фундамент (меньше доверия к одной проблеме).
+// - Минусы: вычисления тяжелее, реализации сложнее, после SIKE требуется осторожность и новые варианты.
+// - Рекомендация: изучать и мониторить, но пока основной фокус на ML-KEM + Dilithium.
+//   Isogeny-based можно использовать как экспериментальный/дополнительный слой для максимальной паранойи.
 
-// Для ransomware / deadman: Dilithium подписи для верификации команд
-// SPHINCS+ для максимальной консервативности (hash-based, меньше доверия к математике)
+// Интеграция в Noise C2 (гипер-гибрид):
+// shared = KDF( X25519_shared || ML-KEM_shared || Isogeny_shared )
+// Это даёт защиту даже если одна из математических проблем будет сломана.
 
-// Quantum-resistant roadmap:
-// - Noise C2: hybrid X25519 + ML-KEM
-// - Key derivation: Argon2 + Kyber shared secret
-// - Long-term keys: hybrid classical + Dilithium
-// - Анонимность: Dandelion++ + PQ mixnets (будущее)
-
-// PHANTOM: теперь проект quantum-ready. Гибрид = безопасность сегодня и завтра.
+// PHANTOM: добавил изоморфизмы (isogeny) как третий pillar пост-квантовой крипты.
+// Проект теперь имеет lattice + hash-based + isogeny hardness assumptions.

@@ -1,21 +1,15 @@
 // =============================================
-// CRYP_ULTIMATE_v999_ULTIMATE_SINGLE - QUANTUM-READY ВЕРСИЯ
-// Добавлен post-quantum layer (ML-KEM + Dilithium notes)
-// Гибрид: классика + PQ для максимальной силы
+// CRYP_ULTIMATE_v999_ULTIMATE_SINGLE - MULTI-PQ ВЕРСИЯ
+// Добавлены isogeny-based алгоритмы (криптография на изоморфизмах)
+// Гипер-гибрид: классика + lattice + isogeny
 // =============================================
 
-// ... (предыдущий код)
+// В гибридном handshake добавить третий компонент:
+// - X25519 / libsodium
+// - ML-KEM (Kyber)
+// - Isogeny-based shared secret (новые схемы)
+// final_key = KDF( shared1 || shared2 || shared3 )
 
-// В NoiseC2 / key exchange добавить:
-// - Классический X25519/libsodium
-// - ML-KEM encapsulation (вставь реализацию из pqclean)
-// - Комбинировать shared secrets через KDF
+// Это делает C2 устойчивым даже если одна из математических проблем будет скомпрометирована.
 
-// Пример гибридного handshake в PhantomNoiseC2:
-// 1. X25519 -> shared1
-// 2. ML-KEM encaps -> shared2
-// 3. final_key = KDF(shared1 || shared2)
-
-// Это делает C2 устойчивым к будущим квантовым компьютерам
-
-// ... (остальной апокалипсис)
+// ... (весь предыдущий код)

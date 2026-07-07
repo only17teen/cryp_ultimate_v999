@@ -1,0 +1,54 @@
+// =============================================
+// sample_poly_cbd - Максимальная AVX512 оптимизация
+// Обработка по 512 бит за раз
+// =============================================
+
+#include <openssl/evp.h>
+#include <immintrin.h>
+
+namespace MLKEM768 {
+
+static void shake256(byte_vec& output, const byte_vec& input, size_t outlen) {
+    output.resize(outlen);
+    EVP_MD_CTX* ctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(ctx, EVP_shake256(), nullptr);
+    EVP_DigestUpdate(ctx, input.data(), input.size());
+    EVP_DigestFinalXOF(ctx, output.data(), outlen);
+    EVP_MD_CTX_free(ctx);
+}
+
+void sample_poly_cbd(poly& r, const byte_vec& seed, uint8_t nonce, int eta) {
+    if (eta != 2) return;
+
+    byte_vec input = seed;
+    input.push_back(nonce);
+
+    byte_vec prf;
+    shake256(prf, input, 128);
+
+    const __m512i* data512 = reinterpret_cast<const __m512i*>(prf.data());
+    int idx = 0;
+
+    // Обрабатываем по 512 бит (64 байта) за раз
+    for (int block = 0; block < 2 && idx < 256; block++) {
+        __m512i bits = _mm512_loadu_si512(data512 + block);
+
+        // Разбиваем 512 бит на 16 × 32-битных чанка (по 4 бита на коэффициент)
+        for (int i = 0; i < 16 && idx < 256; i++) {
+            // Извлекаем 32 бита из 512-битного регистра
+            uint32_t chunk32 = _mm512_extracti32x4_epi32(bits, i / 4)[i % 4] & 0xFFFFFFFF;
+
+            // Обрабатываем 8 коэффициентов из 32 бит
+            for (int j = 0; j < 8 && idx < 256; j++) {
+                uint32_t chunk = (chunk32 >> (j * 4)) & 0xF;
+
+                uint32_t a = __builtin_popcount(chunk & 0b0011);
+                uint32_t b = __builtin_popcount(chunk >> 2);
+
+                r[idx++] = static_cast<int16_t>(a - b);
+            }
+        }
+    }
+}
+
+} // namespace MLKEM768

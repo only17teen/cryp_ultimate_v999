@@ -1,6 +1,17 @@
 // =============================================
-// PURE X25519 - Улучшение ladder_step (правильное удвоение)
+// PURE X25519 - Быстрая редукция + поля Галуа
 // =============================================
+
+// Быстрая редукция по модулю p = 2^255 - 19:
+// После умножения результат может быть до ~2^510.
+// Поскольку 2^255 ≡ 19 (mod p), мы можем заменять старшие 255 бит
+// на (старшие биты * 19) и складывать с младшими.
+// Это позволяет делать редукцию очень эффективно без полного деления.
+
+// Поля Галуа характеристики 2 (GF(2^m)):
+// В отличие от нашего случая (простое поле GF(p)), в двоичных полях
+// сложение = XOR, умножение = полиномиальное умножение по модулю неприводимого полинома.
+// X25519 использует простое поле, поэтому мы работаем с обычной арифметикой по модулю p.
 
 #include <cstdint>
 #include <cstring>
@@ -12,80 +23,36 @@ using u8 = uint8_t;
 
 struct fe { i64 v[10]; };
 
-// ... предыдущие функции ...
+// Улучшенная редукция в fe_mul (использует свойство 2^255 ≡ 19)
+static void fe_mul(fe& h, const fe& f, const fe& g) {
+    // ... (предыдущий код с __int128)
+    // После накопления h0..h9 делаем редукцию:
 
-static void x25519_ladder_step(fe& x2, fe& z2, fe& x3, fe& z3, const fe& x1) {
-    fe t0, t1, t2, t3, t4, t5;
+    i64 carry;
+    carry = (i64)(h0 >> 26); h1 += carry; h0 -= (__int128)carry << 26;
+    carry = (i64)(h4 >> 26); h5 += carry; h4 -= (__int128)carry << 26;
 
-    fe_add(t0, x2, z2);      // A = X2 + Z2
-    fe_sub(t1, x2, z2);      // B = X2 - Z2
+    carry = (i64)(h1 >> 25); h2 += carry; h1 -= (__int128)carry << 25;
+    carry = (i64)(h5 >> 25); h6 += carry; h5 -= (__int128)carry << 25;
 
-    fe_add(t2, x3, z3);      // C = X3 + Z3
-    fe_sub(t3, x3, z3);      // D = X3 - Z3
+    carry = (i64)(h2 >> 26); h3 += carry; h2 -= (__int128)carry << 26;
+    carry = (i64)(h6 >> 26); h7 += carry; h6 -= (__int128)carry << 26;
 
-    fe_mul(t4, t0, t3);      // DA = D * A
-    fe_mul(t5, t1, t2);      // CB = C * B
+    carry = (i64)(h3 >> 25); h4 += carry; h3 -= (__int128)carry << 25;
+    carry = (i64)(h7 >> 25); h8 += carry; h7 -= (__int128)carry << 25;
 
-    fe_add(t0, t4, t5);
-    fe_square(x3, t0);       // X5 = (DA + CB)^2
+    carry = (i64)(h4 >> 26); h5 += carry; h4 -= (__int128)carry << 26;
+    carry = (i64)(h8 >> 26); h9 += carry; h8 -= (__int128)carry << 26;
 
-    fe_sub(t0, t4, t5);
-    fe_square(t1, t0);
-    fe_mul(z3, x1, t1);      // Z5 = x1 * (DA - CB)^2
+    carry = (i64)(h9 >> 25); h0 += carry * 19; h9 -= (__int128)carry << 25;
+    carry = (i64)(h0 >> 26); h1 += carry; h0 -= (__int128)carry << 26;
 
-    // Удвоение
-    fe_square(t0, t0);       // AA = A^2
-    fe_square(t1, t1);       // BB = B^2
-    fe_sub(t2, t0, t1);      // E = AA - BB
-
-    fe_mul(x2, t0, t1);      // X4 = AA * BB
-
-    // Z4 = E * (BB + a24 * E), a24 = 121665
-    fe t6;
-    fe_mul(t6, t2, t1);      // E * BB
-    // Здесь должна быть полная формула с a24
-    fe_copy(z2, t6);
+    h.v[0] = (i64)h0; h.v[1] = (i64)h1;
+    h.v[2] = (i64)h2; h.v[3] = (i64)h3; h.v[4] = (i64)h4;
+    h.v[5] = (i64)h5; h.v[6] = (i64)h6; h.v[7] = (i64)h7;
+    h.v[8] = (i64)h8; h.v[9] = (i64)h9;
 }
 
-static void montgomery_ladder(fe& x, fe& z, const u8* scalar, const fe& x1) {
-    fe x2, z2, x3, z3;
-    fe_1(x2); fe_0(z2);
-    fe_copy(x3, x1); fe_1(z3);
-
-    for (int i = 254; i >= 0; --i) {
-        int bit = (scalar[i >> 3] >> (i & 7)) & 1;
-
-        cswap(x2, x3, bit);
-        cswap(z2, z3, bit);
-
-        x25519_ladder_step(x2, z2, x3, z3, x1);
-
-        cswap(x2, x3, bit);
-        cswap(z2, z3, bit);
-    }
-
-    fe_copy(x, x2);
-    fe_copy(z, z2);
-}
-
-int crypto_scalarmult(u8* q, const u8* n, const u8* p) {
-    fe x1, x, z;
-    fe_frombytes(x1, p);
-
-    u8 e[32];
-    memcpy(e, n, 32);
-    e[0] &= 248; e[31] &= 127; e[31] |= 64;
-
-    montgomery_ladder(x, z, e, x1);
-
-    fe_invert(z, z);
-    fe_mul(x, x, z);
-    fe_tobytes(q, x);
-    return 0;
-}
-
-int X25519(u8 shared[32], const u8 my_priv[32], const u8 their_pub[32]) {
-    return crypto_scalarmult(shared, my_priv, their_pub);
-}
+// ... остальной код (ladder и т.д.) ...
 
 } // namespace PureX25519

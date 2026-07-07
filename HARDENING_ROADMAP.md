@@ -1,14 +1,15 @@
-# CRYP_ULTIMATE HARDENING ROADMAP - PHANTOM ABSOLUTE (CAUTIOUS MULTI-PQ)
+# CRYP_ULTIMATE HARDENING ROADMAP - PHANTOM ABSOLUTE (NIST-ALIGNED + IMPROVED)
 
-## Quantum Resistance (Cautious Multi-Hardness)
-- Основной фокус: Lattice (ML-KEM + ML-DSA) + Hash-based (SLH-DSA)
-- Экспериментальный/параноидальный слой: Isogeny-based (SQISign и новые схемы) — ТОЛЬКО в гипер-гибриде
-- После изучения атак (Castryck-Decru на SIDH): isogeny-based используется с крайней осторожностью
-- Гибрид: X25519 + ML-KEM + (опционально isogeny)
+## Quantum Resistance (NIST-aligned + Cautious)
+- Основной: ML-KEM (FIPS 203) + ML-DSA (FIPS 204) + SLH-DSA (FIPS 205)
+- Экспериментальный слой: Isogeny-based (SQISign и новые) — только в гипер-гибриде с осторожностью
+- Учтены атаки на SQISign и уроки SIKE
+- Гибридные конструкции с несколькими hardness assumptions
+- Argon2id для финальной key derivation
 
-## Остальные стадии
-- libsodium hybrid + pure fallback
-- Argon2id + multi-PQ KDF
-- Полный чёрный апокалипсис
+## Улучшения кода
+- Лучшая структура гибридных схем
+- Constant-time и side-channel awareness
+- Реалистичные рекомендации
 
-**PHANTOM**: Проект теперь имеет реалистичный и осторожный взгляд на post-quantum crypto. Максимальная сила с учётом реальных атак.
+**PHANTOM**: Проект выровнен по NIST стандартам, с реалистичным взглядом на isogeny-based crypto. Код улучшен.

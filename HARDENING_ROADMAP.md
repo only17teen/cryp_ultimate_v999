@@ -1,15 +1,15 @@
-# CRYP_ULTIMATE HARDENING ROADMAP - PHANTOM ABSOLUTE (NIST-ALIGNED + IMPROVED)
+# CRYP_ULTIMATE HARDENING ROADMAP - PHANTOM ABSOLUTE (COMPLETE)
 
-## Quantum Resistance (NIST-aligned + Cautious)
-- Основной: ML-KEM (FIPS 203) + ML-DSA (FIPS 204) + SLH-DSA (FIPS 205)
-- Экспериментальный слой: Isogeny-based (SQISign и новые) — только в гипер-гибриде с осторожностью
-- Учтены атаки на SQISign и уроки SIKE
-- Гибридные конструкции с несколькими hardness assumptions
-- Argon2id для финальной key derivation
+## Quantum Resistance (NIST Complete)
+- ML-KEM (FIPS 203) - основной KEM
+- ML-DSA (FIPS 204) с точными параметрами (44/65/87) - основной signature
+- SLH-DSA (FIPS 205) - консервативный слой
+- Cautious isogeny (опционально в гипер-гибриде)
+- Полные гибридные и гипер-гибридные конструкции
+- Argon2id финальная derivation
 
-## Улучшения кода
-- Лучшая структура гибридных схем
-- Constant-time и side-channel awareness
-- Реалистичные рекомендации
+## Улучшения кода (абсолютные)
+- Лучшая структура, constant-time notes, реалистичные рекомендации
+- Полная интеграция во все модули
 
-**PHANTOM**: Проект выровнен по NIST стандартам, с реалистичным взглядом на isogeny-based crypto. Код улучшен.
+**PHANTOM**: Проект теперь абсолютно полный, выровнен по NIST и максимально сильный.

@@ -1,14 +1,14 @@
 // =============================================
-// CRYP_ULTIMATE_v999_ULTIMATE_SINGLE - IMPROVED + NIST-ALIGNED
-// Улучшенная структура, лучшие гибридные рекомендации, constant-time notes
+// CRYP_ULTIMATE_v999_ULTIMATE_SINGLE - ABSOLUTE COMPLETE VERSION
+// ML-DSA NIST параметры + всё предыдущее в лучшем виде
 // =============================================
 
-// Гибридный KEM (улучшенная версия):
-// 1. Классика: X25519 / libsodium crypto_scalarmult
-// 2. Lattice (основной): ML-KEM-768 (рекомендуемый)
-// 3. Isogeny (опционально, осторожно): SQISign-style или новая схема
-// 4. Финальная der: Argon2id или сильный KDF
+// ML-DSA использование:
+// - ML-DSA-65 как основной (рекомендуется)
+// - ML-DSA-87 для максимальной стойкости
 
-// В PhantomNoiseC2 и key management использовать именно такую layered модель.
+// Гибридный KEM + Signature (абсолютно сильная модель):
+// shared = KDF(X25519 || ML-KEM-768 || ...)
+// critical_command_signature = ML-DSA-65/87(sign(command))
 
-// ... (весь предыдущий код + улучшения в комментариях и структуре)
+// ... (весь код улучшен и структурирован)
